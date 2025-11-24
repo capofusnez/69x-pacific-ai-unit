@@ -1,44 +1,91 @@
-// index.js - versione semplice senza IA e senza intent privilegiati
+// index.js - bot semplice con registrazione comandi integrata
 require('dotenv').config();
-const { Client, GatewayIntentBits, Events } = require('discord.js');
+const {
+  Client,
+  GatewayIntentBits,
+  Events,
+  REST,
+  Routes
+} = require('discord.js');
 
-// Client Discord SOLO con l'intent base (Guilds)
-// così Discord non si lamenta degli intents
-const client = new Client({
-  intents: [GatewayIntentBits.Guilds]
-});
-
-// Quando il bot si avvia
-client.once(Events.ClientReady, (c) => {
-  console.log(`✅ Bot loggato come ${c.user.tag}`);
-});
-
-// Comandi slash base
-client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-
-  if (interaction.commandName === 'ping') {
-    await interaction.reply('🏴‍☠️ Bot online, Fresh Spawn.');
+// Elenco comandi slash
+const commands = [
+  {
+    name: 'ping',
+    description: 'Test del bot'
+  },
+  {
+    name: 'welcome',
+    description: 'Invia il messaggio di benvenuto multilingue nel canale corrente'
+  },
+  {
+    name: 'rules',
+    description: 'Invia le regole ITA/ENG nel canale corrente'
   }
+];
 
-  if (interaction.commandName === 'welcome') {
-    const text =
-      '👋 **Benvenuto su 69x Pacific Land – Scalakal Full PvP**\n\n' +
-      '🇮🇹 **Per iniziare:**\n' +
-      '1️⃣ Leggi le regole in `#regole` / `#rules`\n' +
-      '2️⃣ Presentati in `#presentazioni` / `#introductions`\n' +
-      '3️⃣ Reagisci al messaggio di verifica per ottenere il ruolo **Survivor**\n\n' +
-      '🇬🇧 **To start:**\n' +
-      '1️⃣ Read the rules in `#regole` / `#rules`\n' +
-      '2️⃣ Introduce yourself in `#presentazioni` / `#introductions`\n' +
-      '3️⃣ React to the verify message to get the **Survivor** role.\n\n' +
-      'Stay sharp. Scalakal doesn’t forgive. 💀';
+// Funzione che registra i comandi nel tuo server
+async function registerCommands() {
+  const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
-    await interaction.reply({ content: text });
+  try {
+    console.log('🔄 Registrazione comandi slash...');
+
+    await rest.put(
+      Routes.applicationGuildCommands(
+        process.env.CLIENT_ID,
+        process.env.GUILD_ID
+      ),
+      { body: commands }
+    );
+
+    console.log('✅ Comandi registrati.');
+  } catch (error) {
+    console.error('❌ Errore registrazione comandi:', error);
   }
+}
 
-  if (interaction.commandName === 'rules') {
-    const text =
+// Funzione principale
+async function main() {
+  // 1) registra i comandi
+  await registerCommands();
+
+  // 2) crea il client con SOLO l'intent Guilds (così Discord non si lamenta)
+  const client = new Client({
+    intents: [GatewayIntentBits.Guilds]
+  });
+
+  // Quando il bot è pronto
+  client.once(Events.ClientReady, (c) => {
+    console.log(`✅ Bot loggato come ${c.user.tag}`);
+  });
+
+  // Gestione comandi slash
+  client.on(Events.InteractionCreate, async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+
+    if (interaction.commandName === 'ping') {
+      await interaction.reply('🏴‍☠️ Bot online, Fresh Spawn.');
+    }
+
+    if (interaction.commandName === 'welcome') {
+      const text =
+        '👋 **Benvenuto su 69x Pacific Land – Scalakal Full PvP**\n\n' +
+        '🇮🇹 **Per iniziare:**\n' +
+        '1️⃣ Leggi le regole in `#regole` / `#rules`\n' +
+        '2️⃣ Presentati in `#presentazioni` / `#introductions`\n' +
+        '3️⃣ Reagisci al messaggio di verifica per ottenere il ruolo **Survivor**\n\n' +
+        '🇬🇧 **To start:**\n' +
+        '1️⃣ Read the rules in `#regole` / `#rules`\n' +
+        '2️⃣ Introduce yourself in `#presentazioni` / `#introductions`\n' +
+        '3️⃣ React to the verify message to get the **Survivor** role.\n\n' +
+        'Stay sharp. Scalakal doesn’t forgive. 💀';
+
+      await interaction.reply({ content: text });
+    }
+
+    if (interaction.commandName === 'rules') {
+      const text =
 `📜 **REGOLE / RULES – 69x Pacific Land – Scalakal**
 
 🇮🇹 **ITALIANO**
@@ -57,10 +104,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 Reagisci 👍 per confermare che hai letto / React 👍 to confirm you read.`;
 
-    await interaction.reply({ content: text });
-  }
+      await interaction.reply({ content: text });
+    }
+  });
+
+  // 3) login del bot
+  await client.login(process.env.DISCORD_TOKEN);
+}
+
+// Avvio
+main().catch((err) => {
+  console.error('❌ Errore fatale:', err);
 });
 
-// Login del bot
-client.login(process.env.DISCORD_TOKEN);
 
