@@ -9,7 +9,9 @@ const {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
-    EmbedBuilder
+    EmbedBuilder,
+    ChannelType,
+    PermissionFlagsBits
 } = require("discord.js");
 
 // -------------------------------------------
@@ -19,7 +21,7 @@ const {
 const CLIENT_ID = "1442475115743940611";
 const SERVER_ID = "1442125105575628891";
 
-const RULES_CHANNEL_ID = "1442141514464759868";     // canale regole (non usato direttamente, ma utile)
+const RULES_CHANNEL_ID = "1442141514464759868";     // canale regole (se ti serve in futuro)
 const NEW_USER_CHANNEL_ID = "1442568117296562266";  // canale nuovi utenti / presentazioni
 const SURVIVOR_ROLE_ID = "1442570651696107711";     // ruolo Survivor
 
@@ -30,7 +32,7 @@ const SERVER_SLOTS = "60 slot (modifica se diverso)";
 const SERVER_WIPE = "Wipe completo ogni 30 giorni (modifica se diverso)";
 const SERVER_RESTART = "Restart ogni 4 ore (modifica se diverso)";
 const SERVER_DISCORD = "Questo Discord ufficiale";
-const SERVER_MODS = "PVE & PVP mix? / Trader? / Custom loot? (scrivi tu)";
+const SERVER_MODS = "Trader? AI? Veicoli? Custom loot? (scrivi tu nel codice)";
 const SERVER_STYLE = "Hardcore survival, full PvP, niente favoritismi staff";
 
 // -------------------------------------------
@@ -48,10 +50,77 @@ const client = new Client({
 });
 
 // -------------------------------------------
+// FUNZIONI SUPPORTO PER /setup-server
+// -------------------------------------------
+
+async function getOrCreateCategory(guild, name) {
+    let cat = guild.channels.cache.find(
+        (c) => c.type === ChannelType.GuildCategory && c.name === name
+    );
+    if (!cat) {
+        cat = await guild.channels.create({
+            name,
+            type: ChannelType.GuildCategory
+        });
+    }
+    return cat;
+}
+
+async function getOrCreateTextChannel(guild, name, parentCategory) {
+    let ch = guild.channels.cache.find(
+        (c) => c.type === ChannelType.GuildText && c.name === name
+    );
+
+    if (!ch) {
+        ch = await guild.channels.create({
+            name,
+            type: ChannelType.GuildText,
+            parent: parentCategory ? parentCategory.id : null
+        });
+    } else if (parentCategory && ch.parentId !== parentCategory.id) {
+        await ch.setParent(parentCategory.id);
+    }
+
+    return ch;
+}
+
+async function getOrCreateVoiceChannel(guild, name, parentCategory) {
+    let ch = guild.channels.cache.find(
+        (c) => c.type === ChannelType.GuildVoice && c.name === name
+    );
+
+    if (!ch) {
+        ch = await guild.channels.create({
+            name,
+            type: ChannelType.GuildVoice,
+            parent: parentCategory ? parentCategory.id : null
+        });
+    } else if (parentCategory && ch.parentId !== parentCategory.id) {
+        await ch.setParent(parentCategory.id);
+    }
+
+    return ch;
+}
+
+async function getOrCreateRole(guild, name, options = {}) {
+    let role = guild.roles.cache.find((r) => r.name === name);
+    if (!role) {
+        role = await guild.roles.create({ name, ...options });
+    }
+    return role;
+}
+
+// -------------------------------------------
 // REGISTRAZIONE COMANDI (GUILD SPECIFIC)
 // -------------------------------------------
 
 const commands = [
+    new SlashCommandBuilder()
+        .setName("ping")
+        .setDescription("Test del bot"),
+    new SlashCommandBuilder()
+        .setName("setup-server")
+        .setDescription("Crea categorie, canali e ruoli base (solo admin)"),
     new SlashCommandBuilder()
         .setName("sendrules")
         .setDescription("Invia il messaggio delle regole nel canale corrente"),
@@ -84,12 +153,196 @@ client.once("ready", () => {
 });
 
 // -------------------------------------------
-// COMANDO /sendrules – Regole ITA + ENG + bottone
+// GESTIONE INTERAZIONI (COMANDI + BOTTONI)
 // -------------------------------------------
 
 client.on("interactionCreate", async interaction => {
+    // 🔘 BOTTONI (ACCETTO REGOLE)
+    if (interaction.isButton()) {
+        if (interaction.customId !== "accept_rules") return;
+
+        const role = interaction.guild.roles.cache.get(SURVIVOR_ROLE_ID);
+        if (!role) {
+            return interaction.reply({ content: "❌ Ruolo Survivor non trovato.", ephemeral: true });
+        }
+
+        // Assegna ruolo
+        await interaction.member.roles.add(role);
+
+        // Risposta privata nel canale
+        await interaction.reply({ content: "✔ Regole accettate! Sei ora un Survivor.", ephemeral: true });
+
+        // Messaggio nel canale nuovi utenti
+        const welcomeChannel = interaction.guild.channels.cache.get(NEW_USER_CHANNEL_ID);
+        if (welcomeChannel) {
+            welcomeChannel.send(`🎖 <@${interaction.user.id}> è entrato ufficialmente nel mondo malato di **Sakhal**.`);
+        }
+
+        // DM al giocatore
+        interaction.user.send(`
+👋 Benvenuto sopravvissuto.
+
+Ora fai parte di **69x Pacific Land [Sakhal]**.
+
+🔥 Consigli:
+- Non fidarti di nessuno
+- Loota tutto
+- Spara per primo
+- Sopravvivi finché puoi
+
+Good luck… you’ll need it. 💀
+        `).catch(() => null);
+
+        return;
+    }
+
+    // 🔹 SLASH COMMAND
     if (!interaction.isChatInputCommand()) return;
 
+    // /ping
+    if (interaction.commandName === "ping") {
+        await interaction.reply("🏴‍☠️ Bot online, Fresh Spawn.");
+        return;
+    }
+
+    // /setup-server
+    if (interaction.commandName === "setup-server") {
+        if (
+            !interaction.memberPermissions ||
+            !interaction.memberPermissions.has(PermissionFlagsBits.Administrator)
+        ) {
+            await interaction.reply({
+                content: "❌ Solo un amministratore può usare questo comando.",
+                ephemeral: true
+            });
+            return;
+        }
+
+        await interaction.reply({
+            content: "🛠 Sto configurando il server... attendi qualche secondo.",
+            ephemeral: true
+        });
+
+        const guild = interaction.guild;
+        if (!guild) {
+            await interaction.editReply("❌ Errore: guild non trovata.");
+            return;
+        }
+
+        try {
+            // Categorie
+            const catWelcome = await getOrCreateCategory(guild, "🧭 Benvenuto");
+            const catCommunity = await getOrCreateCategory(guild, "💬 Community");
+            const catVoice = await getOrCreateCategory(guild, "🎧 Vocali");
+            const catStaff = await getOrCreateCategory(guild, "🛠 Staff");
+
+            // Canali Benvenuto
+            const chRegole = await getOrCreateTextChannel(
+                guild,
+                "📜┃regole",
+                catWelcome
+            );
+            const chInfo = await getOrCreateTextChannel(
+                guild,
+                "🧭┃info-server",
+                catWelcome
+            );
+            const chPresentazioni = await getOrCreateTextChannel(
+                guild,
+                "👋┃presentazioni",
+                catWelcome
+            );
+            const chAnnunci = await getOrCreateTextChannel(
+                guild,
+                "🔔┃annunci",
+                catWelcome
+            );
+
+            // Canali Community
+            const chGenerale = await getOrCreateTextChannel(
+                guild,
+                "😎┃generale",
+                catCommunity
+            );
+            const chScreens = await getOrCreateTextChannel(
+                guild,
+                "📸┃screenshots",
+                catCommunity
+            );
+            const chRaid = await getOrCreateTextChannel(
+                guild,
+                "🎯┃raid-storie",
+                catCommunity
+            );
+
+            // Vocali
+            await getOrCreateVoiceChannel(
+                guild,
+                "🎧 Vocale principale",
+                catVoice
+            );
+            await getOrCreateVoiceChannel(
+                guild,
+                "🎤 Squad 1",
+                catVoice
+            );
+            await getOrCreateVoiceChannel(
+                guild,
+                "🎤 Squad 2",
+                catVoice
+            );
+
+            // Staff
+            await getOrCreateTextChannel(
+                guild,
+                "🚫┃admin-only",
+                catStaff
+            );
+            await getOrCreateTextChannel(
+                guild,
+                "🛠┃server-todo",
+                catStaff
+            );
+
+            // Ruoli base
+            const roleOverlord = await getOrCreateRole(guild, "👑 Overlord");
+            const roleCommand = await getOrCreateRole(guild, "🧪 Command Unit");
+            const roleOfficer = await getOrCreateRole(guild, "🧢 Field Officer");
+            const roleVeteran = await getOrCreateRole(guild, "🎯 Veteran Raider");
+            const roleSurvivor = await getOrCreateRole(guild, "🎒 Survivor");
+            const roleFresh = await getOrCreateRole(guild, "🦴 Fresh Spawn");
+
+            await interaction.editReply(
+                "✅ Setup completato.\n" +
+                `Categorie create/aggiornate:\n` +
+                `• ${catWelcome.name}\n` +
+                `• ${catCommunity.name}\n` +
+                `• ${catVoice.name}\n` +
+                `• ${catStaff.name}\n\n` +
+                `Canali principali:\n` +
+                `• ${chRegole} (regole)\n` +
+                `• ${chInfo} (info server)\n` +
+                `• ${chPresentazioni} (presentazioni)\n` +
+                `• ${chGenerale} (generale)\n\n` +
+                `Ruoli:\n` +
+                `• ${roleOverlord.name}\n` +
+                `• ${roleCommand.name}\n` +
+                `• ${roleOfficer.name}\n` +
+                `• ${roleVeteran.name}\n` +
+                `• ${roleSurvivor.name}\n` +
+                `• ${roleFresh.name}\n`
+            );
+        } catch (err) {
+            console.error("❌ Errore setup-server:", err);
+            await interaction.editReply(
+                "❌ Si è verificato un errore durante il setup del server."
+            );
+        }
+
+        return;
+    }
+
+    // /sendrules – Regole ITA + ENG + bottone
     if (interaction.commandName === "sendrules") {
 
         const embed = new EmbedBuilder()
@@ -210,11 +463,10 @@ If you’re here to ruin the experience: you will be removed.
 
         await interaction.channel.send({ embeds: [embed], components: [row] });
         await interaction.reply({ content: "Regole inviate ✔", ephemeral: true });
+        return;
     }
 
-    // -------------------------------------------
-    // COMANDO /info-sakhal – Info server ITA + ENG
-    // -------------------------------------------
+    // /info-sakhal – Info server ITA + ENG
     if (interaction.commandName === "info-sakhal") {
 
         const embedInfo = new EmbedBuilder()
@@ -272,48 +524,8 @@ If it doesn't show up, search for **${SERVER_NAME}** in the DayZ server browser.
             .setFooter({ text: "Aggiorna IP, wipe e info direttamente nel codice se cambi qualcosa." });
 
         await interaction.reply({ embeds: [embedInfo] });
+        return;
     }
-});
-
-// -------------------------------------------
-// CLICK BOTTONE → ASSEGNA RUOLO + ANNUNCIO + DM
-// -------------------------------------------
-
-client.on("interactionCreate", async interaction => {
-    if (!interaction.isButton()) return;
-    if (interaction.customId !== "accept_rules") return;
-
-    const role = interaction.guild.roles.cache.get(SURVIVOR_ROLE_ID);
-    if (!role) {
-        return interaction.reply({ content: "❌ Ruolo Survivor non trovato.", ephemeral: true });
-    }
-
-    // Assegna ruolo
-    await interaction.member.roles.add(role);
-
-    // Risposta privata nel canale
-    await interaction.reply({ content: "✔ Regole accettate! Sei ora un Survivor.", ephemeral: true });
-
-    // Messaggio nel canale nuovi utenti
-    const welcomeChannel = interaction.guild.channels.cache.get(NEW_USER_CHANNEL_ID);
-    if (welcomeChannel) {
-        welcomeChannel.send(`🎖 <@${interaction.user.id}> è entrato ufficialmente nel mondo malato di **Sakhal**.`);
-    }
-
-    // DM al giocatore
-    interaction.user.send(`
-👋 Benvenuto sopravvissuto.
-
-Ora fai parte di **69x Pacific Land [Sakhal]**.
-
-🔥 Consigli:
-- Non fidarti di nessuno
-- Loota tutto
-- Spara per primo
-- Sopravvivi finché puoi
-
-Good luck… you’ll need it. 💀
-    `).catch(() => null);
 });
 
 // -------------------------------------------
