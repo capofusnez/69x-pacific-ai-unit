@@ -1,4 +1,4 @@
-// index.js - bot semplice con registrazione comandi integrata
+// index.js - 69x Pacific AI Unit (versione senza IA, con "pagine" gestite dal bot)
 require('dotenv').config();
 const {
   Client,
@@ -8,7 +8,9 @@ const {
   Routes
 } = require('discord.js');
 
-// Elenco comandi slash
+// ------------------------------
+// 1) DEFINIZIONE COMANDI SLASH
+// ------------------------------
 const commands = [
   {
     name: 'ping',
@@ -21,10 +23,17 @@ const commands = [
   {
     name: 'rules',
     description: 'Invia le regole ITA/ENG nel canale corrente'
+  },
+  {
+    name: 'panel',
+    description: 'Mostra il pannello con le pagine principali del server'
   }
 ];
 
-// Funzione che registra i comandi nel tuo server
+// ------------------------------
+// 2) REGISTRAZIONE COMANDI
+//    (viene fatta ogni volta che il bot parte)
+// ------------------------------
 async function registerCommands() {
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
@@ -33,8 +42,8 @@ async function registerCommands() {
 
     await rest.put(
       Routes.applicationGuildCommands(
-        process.env.CLIENT_ID,
-        process.env.GUILD_ID
+        process.env.CLIENT_ID, // Application ID
+        process.env.GUILD_ID   // ID server
       ),
       { body: commands }
     );
@@ -45,12 +54,15 @@ async function registerCommands() {
   }
 }
 
-// Funzione principale
+// ------------------------------
+// 3) FUNZIONE PRINCIPALE
+// ------------------------------
 async function main() {
   // 1) registra i comandi
   await registerCommands();
 
-  // 2) crea il client con SOLO l'intent Guilds (così Discord non si lamenta)
+  // 2) crea il client Discord
+  //    SOLO intent Guilds, così non rompe con gli intents privilegiati
   const client = new Client({
     intents: [GatewayIntentBits.Guilds]
   });
@@ -60,14 +72,18 @@ async function main() {
     console.log(`✅ Bot loggato come ${c.user.tag}`);
   });
 
-  // Gestione comandi slash
+  // ------------------------------
+  // 4) GESTIONE COMANDI SLASH
+  // ------------------------------
   client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
+    // /ping
     if (interaction.commandName === 'ping') {
       await interaction.reply('🏴‍☠️ Bot online, Fresh Spawn.');
     }
 
+    // /welcome
     if (interaction.commandName === 'welcome') {
       const text =
         '👋 **Benvenuto su 69x Pacific Land – Scalakal Full PvP**\n\n' +
@@ -84,6 +100,7 @@ async function main() {
       await interaction.reply({ content: text });
     }
 
+    // /rules
     if (interaction.commandName === 'rules') {
       const text =
 `📜 **REGOLE / RULES – 69x Pacific Land – Scalakal**
@@ -106,9 +123,32 @@ Reagisci 👍 per confermare che hai letto / React 👍 to confirm you read.`;
 
       await interaction.reply({ content: text });
     }
+
+    // /panel  → "pagine" del server
+    if (interaction.commandName === 'panel') {
+      const text =
+`📚 **PANNELLO SERVER – 69x Pacific Land – Scalakal**
+
+**Pagina 1 – Regole**
+> Vai in <#1442141514464759868> e leggi le regole ITA/ENG.
+
+**Pagina 2 – Info Server**
+> Vai in <#1442568020999536792> per leggere mappa, wipe, mod, slot, ecc.
+
+**Pagina 3 – Nuovi Utenti / Verifica**
+> Vai in <#1442568117296562266> per presentarti
+> e segui il messaggio di verifica per ottenere il ruolo **Survivor**.
+
+**Pagina 4 – Chat generale**
+> Usa <#1442125106154573885> per parlare con gli altri giocatori.
+
+Puoi richiamare questo pannello in qualsiasi momento con \`/panel\`.`;
+
+      await interaction.reply({ content: text, ephemeral: false });
+    }
   });
 
-  // 3) login del bot
+  // 5) login del bot
   await client.login(process.env.DISCORD_TOKEN);
 }
 
@@ -116,5 +156,3 @@ Reagisci 👍 per confermare che hai letto / React 👍 to confirm you read.`;
 main().catch((err) => {
   console.error('❌ Errore fatale:', err);
 });
-
-
