@@ -10,8 +10,8 @@ const {
     ButtonBuilder,
     ButtonStyle,
     EmbedBuilder,
-    ChannelType,
-    PermissionFlagsBits
+    PermissionFlagsBits,
+    ChannelType
 } = require("discord.js");
 
 // -------------------------------------------
@@ -21,8 +21,8 @@ const {
 const CLIENT_ID = "1442475115743940611";
 const SERVER_ID = "1442125105575628891";
 
-const RULES_CHANNEL_ID = "1442141514464759868";     // canale regole (se ti serve in futuro)
-const NEW_USER_CHANNEL_ID = "1442568117296562266";  // canale nuovi utenti / presentazioni
+const RULES_CHANNEL_ID = "1442141514464759868";     // canale regole (esistente)
+const NEW_USER_CHANNEL_ID = "1442568117296562266";  // canale nuovi utenti / presentazioni (esistente)
 const SURVIVOR_ROLE_ID = "1442570651696107711";     // ruolo Survivor
 
 // --- INFO SERVER SAKHAL (MODIFICA QUI IN BASE AL TUO SERVER) ---
@@ -32,7 +32,7 @@ const SERVER_SLOTS = "60 slot (modifica se diverso)";
 const SERVER_WIPE = "Wipe completo ogni 30 giorni (modifica se diverso)";
 const SERVER_RESTART = "Restart ogni 4 ore (modifica se diverso)";
 const SERVER_DISCORD = "Questo Discord ufficiale";
-const SERVER_MODS = "Trader? AI? Veicoli? Custom loot? (scrivi tu nel codice)";
+const SERVER_MODS = "Trader, custom loot, veicoli, AI (modifica in base alle tue mod)";
 const SERVER_STYLE = "Hardcore survival, full PvP, niente favoritismi staff";
 
 // -------------------------------------------
@@ -50,12 +50,12 @@ const client = new Client({
 });
 
 // -------------------------------------------
-// FUNZIONI SUPPORTO PER /setup-server
+// HELPER PER CATEGORIE E CANALI
 // -------------------------------------------
 
 async function getOrCreateCategory(guild, name) {
     let cat = guild.channels.cache.find(
-        (c) => c.type === ChannelType.GuildCategory && c.name === name
+        c => c.type === ChannelType.GuildCategory && c.name === name
     );
     if (!cat) {
         cat = await guild.channels.create({
@@ -68,9 +68,8 @@ async function getOrCreateCategory(guild, name) {
 
 async function getOrCreateTextChannel(guild, name, parentCategory) {
     let ch = guild.channels.cache.find(
-        (c) => c.type === ChannelType.GuildText && c.name === name
+        c => c.type === ChannelType.GuildText && c.name === name
     );
-
     if (!ch) {
         ch = await guild.channels.create({
             name,
@@ -80,34 +79,23 @@ async function getOrCreateTextChannel(guild, name, parentCategory) {
     } else if (parentCategory && ch.parentId !== parentCategory.id) {
         await ch.setParent(parentCategory.id);
     }
-
     return ch;
 }
 
 async function getOrCreateVoiceChannel(guild, name, parentCategory) {
     let ch = guild.channels.cache.find(
-        (c) => c.type === ChannelType.GuildVoice && c.name === name
+        c => c.type === ChannelType.GuildVoice && c.name === name
     );
-
     if (!ch) {
         ch = await guild.channels.create({
             name,
             type: ChannelType.GuildVoice,
             parent: parentCategory ? parentCategory.id : null
         });
-    } else if (parentCategory && ch.parentId !== parentCategory.id) {
+    } else if (parentCategory && c.parentId !== parentCategory.id) {
         await ch.setParent(parentCategory.id);
     }
-
     return ch;
-}
-
-async function getOrCreateRole(guild, name, options = {}) {
-    let role = guild.roles.cache.find((r) => r.name === name);
-    if (!role) {
-        role = await guild.roles.create({ name, ...options });
-    }
-    return role;
 }
 
 // -------------------------------------------
@@ -116,17 +104,14 @@ async function getOrCreateRole(guild, name, options = {}) {
 
 const commands = [
     new SlashCommandBuilder()
-        .setName("ping")
-        .setDescription("Test del bot"),
-    new SlashCommandBuilder()
-        .setName("setup-server")
-        .setDescription("Crea categorie, canali e ruoli base (solo admin)"),
-    new SlashCommandBuilder()
         .setName("sendrules")
         .setDescription("Invia il messaggio delle regole nel canale corrente"),
     new SlashCommandBuilder()
         .setName("info-sakhal")
-        .setDescription("Mostra le info del server DayZ Sakhal")
+        .setDescription("Mostra le info del server DayZ Sakhal"),
+    new SlashCommandBuilder()
+        .setName("setup-structure")
+        .setDescription("Crea/organizza categorie e canali ITA/ENG (solo admin)")
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
@@ -153,196 +138,13 @@ client.once("ready", () => {
 });
 
 // -------------------------------------------
-// GESTIONE INTERAZIONI (COMANDI + BOTTONI)
+// INTERACTION: COMANDI SLASH
 // -------------------------------------------
 
 client.on("interactionCreate", async interaction => {
-    // 🔘 BOTTONI (ACCETTO REGOLE)
-    if (interaction.isButton()) {
-        if (interaction.customId !== "accept_rules") return;
-
-        const role = interaction.guild.roles.cache.get(SURVIVOR_ROLE_ID);
-        if (!role) {
-            return interaction.reply({ content: "❌ Ruolo Survivor non trovato.", ephemeral: true });
-        }
-
-        // Assegna ruolo
-        await interaction.member.roles.add(role);
-
-        // Risposta privata nel canale
-        await interaction.reply({ content: "✔ Regole accettate! Sei ora un Survivor.", ephemeral: true });
-
-        // Messaggio nel canale nuovi utenti
-        const welcomeChannel = interaction.guild.channels.cache.get(NEW_USER_CHANNEL_ID);
-        if (welcomeChannel) {
-            welcomeChannel.send(`🎖 <@${interaction.user.id}> è entrato ufficialmente nel mondo malato di **Sakhal**.`);
-        }
-
-        // DM al giocatore
-        interaction.user.send(`
-👋 Benvenuto sopravvissuto.
-
-Ora fai parte di **69x Pacific Land [Sakhal]**.
-
-🔥 Consigli:
-- Non fidarti di nessuno
-- Loota tutto
-- Spara per primo
-- Sopravvivi finché puoi
-
-Good luck… you’ll need it. 💀
-        `).catch(() => null);
-
-        return;
-    }
-
-    // 🔹 SLASH COMMAND
     if (!interaction.isChatInputCommand()) return;
 
-    // /ping
-    if (interaction.commandName === "ping") {
-        await interaction.reply("🏴‍☠️ Bot online, Fresh Spawn.");
-        return;
-    }
-
-    // /setup-server
-    if (interaction.commandName === "setup-server") {
-        if (
-            !interaction.memberPermissions ||
-            !interaction.memberPermissions.has(PermissionFlagsBits.Administrator)
-        ) {
-            await interaction.reply({
-                content: "❌ Solo un amministratore può usare questo comando.",
-                ephemeral: true
-            });
-            return;
-        }
-
-        await interaction.reply({
-            content: "🛠 Sto configurando il server... attendi qualche secondo.",
-            ephemeral: true
-        });
-
-        const guild = interaction.guild;
-        if (!guild) {
-            await interaction.editReply("❌ Errore: guild non trovata.");
-            return;
-        }
-
-        try {
-            // Categorie
-            const catWelcome = await getOrCreateCategory(guild, "🧭 Benvenuto");
-            const catCommunity = await getOrCreateCategory(guild, "💬 Community");
-            const catVoice = await getOrCreateCategory(guild, "🎧 Vocali");
-            const catStaff = await getOrCreateCategory(guild, "🛠 Staff");
-
-            // Canali Benvenuto
-            const chRegole = await getOrCreateTextChannel(
-                guild,
-                "📜┃regole",
-                catWelcome
-            );
-            const chInfo = await getOrCreateTextChannel(
-                guild,
-                "🧭┃info-server",
-                catWelcome
-            );
-            const chPresentazioni = await getOrCreateTextChannel(
-                guild,
-                "👋┃presentazioni",
-                catWelcome
-            );
-            const chAnnunci = await getOrCreateTextChannel(
-                guild,
-                "🔔┃annunci",
-                catWelcome
-            );
-
-            // Canali Community
-            const chGenerale = await getOrCreateTextChannel(
-                guild,
-                "😎┃generale",
-                catCommunity
-            );
-            const chScreens = await getOrCreateTextChannel(
-                guild,
-                "📸┃screenshots",
-                catCommunity
-            );
-            const chRaid = await getOrCreateTextChannel(
-                guild,
-                "🎯┃raid-storie",
-                catCommunity
-            );
-
-            // Vocali
-            await getOrCreateVoiceChannel(
-                guild,
-                "🎧 Vocale principale",
-                catVoice
-            );
-            await getOrCreateVoiceChannel(
-                guild,
-                "🎤 Squad 1",
-                catVoice
-            );
-            await getOrCreateVoiceChannel(
-                guild,
-                "🎤 Squad 2",
-                catVoice
-            );
-
-            // Staff
-            await getOrCreateTextChannel(
-                guild,
-                "🚫┃admin-only",
-                catStaff
-            );
-            await getOrCreateTextChannel(
-                guild,
-                "🛠┃server-todo",
-                catStaff
-            );
-
-            // Ruoli base
-            const roleOverlord = await getOrCreateRole(guild, "👑 Overlord");
-            const roleCommand = await getOrCreateRole(guild, "🧪 Command Unit");
-            const roleOfficer = await getOrCreateRole(guild, "🧢 Field Officer");
-            const roleVeteran = await getOrCreateRole(guild, "🎯 Veteran Raider");
-            const roleSurvivor = await getOrCreateRole(guild, "🎒 Survivor");
-            const roleFresh = await getOrCreateRole(guild, "🦴 Fresh Spawn");
-
-            await interaction.editReply(
-                "✅ Setup completato.\n" +
-                `Categorie create/aggiornate:\n` +
-                `• ${catWelcome.name}\n` +
-                `• ${catCommunity.name}\n` +
-                `• ${catVoice.name}\n` +
-                `• ${catStaff.name}\n\n` +
-                `Canali principali:\n` +
-                `• ${chRegole} (regole)\n` +
-                `• ${chInfo} (info server)\n` +
-                `• ${chPresentazioni} (presentazioni)\n` +
-                `• ${chGenerale} (generale)\n\n` +
-                `Ruoli:\n` +
-                `• ${roleOverlord.name}\n` +
-                `• ${roleCommand.name}\n` +
-                `• ${roleOfficer.name}\n` +
-                `• ${roleVeteran.name}\n` +
-                `• ${roleSurvivor.name}\n` +
-                `• ${roleFresh.name}\n`
-            );
-        } catch (err) {
-            console.error("❌ Errore setup-server:", err);
-            await interaction.editReply(
-                "❌ Si è verificato un errore durante il setup del server."
-            );
-        }
-
-        return;
-    }
-
-    // /sendrules – Regole ITA + ENG + bottone
+    // ---------------- /sendrules ----------------
     if (interaction.commandName === "sendrules") {
 
         const embed = new EmbedBuilder()
@@ -466,7 +268,7 @@ If you’re here to ruin the experience: you will be removed.
         return;
     }
 
-    // /info-sakhal – Info server ITA + ENG
+    // ---------------- /info-sakhal ----------------
     if (interaction.commandName === "info-sakhal") {
 
         const embedInfo = new EmbedBuilder()
@@ -493,7 +295,7 @@ If you’re here to ruin the experience: you will be removed.
                     value: `
 ${SERVER_MODS}
 
-*(Personalizza questa sezione nel codice: armi, veicoli, trader, AI, ecc.)*
+*(Personalizza questa sezione nel codice con le tue mod reali.)*
                     `
                 },
                 {
@@ -526,6 +328,229 @@ If it doesn't show up, search for **${SERVER_NAME}** in the DayZ server browser.
         await interaction.reply({ embeds: [embedInfo] });
         return;
     }
+
+    // ---------------- /setup-structure ----------------
+    if (interaction.commandName === "setup-structure") {
+        // solo admin
+        if (
+            !interaction.memberPermissions ||
+            !interaction.memberPermissions.has(PermissionFlagsBits.Administrator)
+        ) {
+            await interaction.reply({
+                content: "❌ Solo un amministratore può usare questo comando.",
+                ephemeral: true
+            });
+            return;
+        }
+
+        await interaction.reply({
+            content: "🛠 Sto creando/organizzando categorie e canali ITA/ENG...",
+            ephemeral: true
+        });
+
+        const guild = interaction.guild;
+        if (!guild) {
+            await interaction.editReply("❌ Errore: guild non trovata.");
+            return;
+        }
+
+        try {
+            // Categorie principali
+            const catWelcome = await getOrCreateCategory(guild, "🧭 Benvenuto • Welcome");
+            const catCommunity = await getOrCreateCategory(guild, "💬 Community • Community");
+            const catInGame = await getOrCreateCategory(guild, "🎮 In gioco • In-Game");
+            const catVoice = await getOrCreateCategory(guild, "🎧 Vocali • Voice Channels");
+            const catSupport = await getOrCreateCategory(guild, "🆘 Supporto • Support");
+            const catStaff = await getOrCreateCategory(guild, "🛠 Staff • Staff Only");
+
+            // --- CANALI WELCOME ---
+            // regole: prova a usare il canale esistente
+            let rulesChannel = await guild.channels.fetch(RULES_CHANNEL_ID).catch(() => null);
+            if (rulesChannel) {
+                await rulesChannel.setName("📜┃regole・rules");
+                await rulesChannel.setParent(catWelcome.id);
+            } else {
+                rulesChannel = await getOrCreateTextChannel(
+                    guild,
+                    "📜┃regole・rules",
+                    catWelcome
+                );
+            }
+
+            // nuovi utenti: prova a usare il canale esistente
+            let newUserChannel = await guild.channels.fetch(NEW_USER_CHANNEL_ID).catch(() => null);
+            if (newUserChannel) {
+                await newUserChannel.setName("🎖┃nuovi-utenti・new-survivors");
+                await newUserChannel.setParent(catWelcome.id);
+            } else {
+                newUserChannel = await getOrCreateTextChannel(
+                    guild,
+                    "🎖┃nuovi-utenti・new-survivors",
+                    catWelcome
+                );
+            }
+
+            const infoChannel = await getOrCreateTextChannel(
+                guild,
+                "🧭┃info-sakhal・server-info",
+                catWelcome
+            );
+            const annChannel = await getOrCreateTextChannel(
+                guild,
+                "📣┃annunci・announcements",
+                catWelcome
+            );
+
+            // --- CANALI COMMUNITY ---
+            const chGeneral = await getOrCreateTextChannel(
+                guild,
+                "😎┃generale・general-chat",
+                catCommunity
+            );
+            const chScreens = await getOrCreateTextChannel(
+                guild,
+                "📸┃screen・screenshots",
+                catCommunity
+            );
+            const chRaidStories = await getOrCreateTextChannel(
+                guild,
+                "🎯┃storie-raid・raid-stories",
+                catCommunity
+            );
+            const chInternational = await getOrCreateTextChannel(
+                guild,
+                "🌐┃international・english-chat",
+                catCommunity
+            );
+
+            // --- CANALI IN-GAME ---
+            await getOrCreateTextChannel(
+                guild,
+                "📢┃looking-for-team・lfg",
+                catInGame
+            );
+            await getOrCreateTextChannel(
+                guild,
+                "💰┃commercio・trade",
+                catInGame
+            );
+            await getOrCreateTextChannel(
+                guild,
+                "🎯┃raid-planning・raid-plans",
+                catInGame
+            );
+
+            // --- VOCALI ---
+            await getOrCreateVoiceChannel(
+                guild,
+                "🎧┃vocale-1・voice-1",
+                catVoice
+            );
+            await getOrCreateVoiceChannel(
+                guild,
+                "🎧┃vocale-2・voice-2",
+                catVoice
+            );
+            await getOrCreateVoiceChannel(
+                guild,
+                "🎤┃raid-squad・raid-squad",
+                catVoice
+            );
+
+            // --- SUPPORTO ---
+            await getOrCreateTextChannel(
+                guild,
+                "🎫┃ticket-supporto・tickets",
+                catSupport
+            );
+            await getOrCreateTextChannel(
+                guild,
+                "🐞┃bug-report・bug-report",
+                catSupport
+            );
+            await getOrCreateTextChannel(
+                guild,
+                "💡┃suggerimenti・suggestions",
+                catSupport
+            );
+
+            // --- STAFF ---
+            await getOrCreateTextChannel(
+                guild,
+                "🚫┃admin-log",
+                catStaff
+            );
+            await getOrCreateTextChannel(
+                guild,
+                "🛠┃staff-chat",
+                catStaff
+            );
+            await getOrCreateTextChannel(
+                guild,
+                "📋┃ban-log",
+                catStaff
+            );
+
+            await interaction.editReply(
+                "✅ Struttura categorie/canali ITA/ENG creata/aggiornata.\n" +
+                "Categorie create:\n" +
+                `• ${catWelcome.name}\n` +
+                `• ${catCommunity.name}\n` +
+                `• ${catInGame.name}\n` +
+                `• ${catVoice.name}\n` +
+                `• ${catSupport.name}\n` +
+                `• ${catStaff.name}\n`
+            );
+        } catch (err) {
+            console.error("❌ Errore setup-structure:", err);
+            await interaction.editReply(
+                "❌ Si è verificato un errore durante la creazione della struttura."
+            );
+        }
+
+        return;
+    }
+});
+
+// -------------------------------------------
+// INTERACTION: BOTTONI (ACCETTO REGOLE)
+// -------------------------------------------
+
+client.on("interactionCreate", async interaction => {
+    if (!interaction.isButton()) return;
+    if (interaction.customId !== "accept_rules") return;
+
+    const role = interaction.guild.roles.cache.get(SURVIVOR_ROLE_ID);
+    if (!role) {
+        return interaction.reply({ content: "❌ Ruolo Survivor non trovato.", ephemeral: true });
+    }
+
+    // Assegna ruolo
+    await interaction.member.roles.add(role);
+
+    // Risposta privata nel canale
+    await interaction.reply({ content: "✔ Regole accettate! Sei ora un Survivor.", ephemeral: true });
+
+    // Messaggio nel canale nuovi utenti
+    const welcomeChannel = interaction.guild.channels.cache.get(NEW_USER_CHANNEL_ID);
+    if (welcomeChannel) {
+        welcomeChannel.send(`🎖 <@${interaction.user.id}> è entrato ufficialmente nel mondo malato di **Sakhal**.`);
+    }
+
+    // DM al giocatore
+    interaction.user.send(`
+👋 Benvenuto sopravvissuto.
+
+Ora fai parte di **69x Pacific Land [Sakhal]**.
+
+🔥 Consigli:
+- Non fidarti di nessuno
+- Loota tutto
+- Spara per primo
+- Sopravvivi finché puoi
+
+Good luck… you’ll need it. 💀
+    `).catch(() => null);
 });
 
 // -------------------------------------------
