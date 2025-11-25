@@ -1,13 +1,13 @@
 {
   "name": "69x-pacific-ai-unit",
   "version": "1.0.0",
-  "description": "AI assistant bot for 69x Pacific Land Scalakal Full PvP",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "discord.js": "^14.16.3",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
   }
 }
