@@ -27,11 +27,12 @@ const SURVIVOR_ROLE_ID = "1442570651696107711";     // ruolo Survivor
 
 // --- INFO SERVER SAKHAL (MODIFICA QUI IN BASE AL TUO SERVER) ---
 const SERVER_NAME = "69x Pacific Land | Sakhal Full PvP";
-const SERVER_SLOTS = "24 SLOT";
+const SERVER_IP = "IP:PORTA (modifica qui)"; // es: "123.45.67.89:2302"
+const SERVER_SLOTS = "60 slot (modifica se diverso)";
+const SERVER_WIPE = "Wipe completo ogni 30 giorni (modifica se diverso)";
+const SERVER_RESTART = "Restart ogni 4 ore (modifica se diverso)";
 const SERVER_DISCORD = "Questo Discord ufficiale";
-const SERVER_WIPE = "Wipe completo ogni 30 giorni";
-const SERVER_RESTART = "Restart ogni 2 ore";
-const SERVER_MODS = "custom loot, veicoli";
+const SERVER_MODS = "Trader, custom loot, veicoli, AI (modifica in base alle tue mod)";
 const SERVER_STYLE = "Hardcore survival, full PvP, niente favoritismi staff";
 
 // -------------------------------------------
@@ -260,7 +261,7 @@ If you’re here to survive, have fun and be part of the community: welcome.
 If you’re here to ruin the experience: you will be removed.
             `)
             .setColor("DarkGreen")
-            .setFooter({ text: "⚠ Accept/Accetto" });
+            .setFooter({ text: "⚠ Accept/Accetto per entrare ufficialmente nel server" });
 
         const row = new ActionRowBuilder()
             .addComponents(
