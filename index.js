@@ -92,7 +92,7 @@ async function getOrCreateVoiceChannel(guild, name, parentCategory) {
             type: ChannelType.GuildVoice,
             parent: parentCategory ? parentCategory.id : null
         });
-    } else if (parentCategory && c.parentId !== parentCategory.id) {
+    } else if (parentCategory && ch.parentId !== parentCategory.id) {
         await ch.setParent(parentCategory.id);
     }
     return ch;
@@ -111,7 +111,10 @@ const commands = [
         .setDescription("Mostra le info del server DayZ Sakhal"),
     new SlashCommandBuilder()
         .setName("setup-structure")
-        .setDescription("Crea/organizza categorie e canali ITA/ENG (solo admin)")
+        .setDescription("Crea/organizza categorie e canali ITA/ENG (solo admin)"),
+    new SlashCommandBuilder()
+        .setName("ticket")
+        .setDescription("Apri un ticket con lo staff / Open a support ticket")
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
@@ -150,6 +153,11 @@ client.on("interactionCreate", async interaction => {
         const embed = new EmbedBuilder()
             .setTitle("📜 Regole del Server – Zona Controllata")
             .setDescription(`
+**🇮🇹 Premi il pulsante "ACCEPT / ACCETTO" qui sotto per confermare che hai letto e accettato le regole.**  
+**🇬🇧 Press the "ACCEPT / ACCETTO" button below to confirm you have read and accepted the rules.**
+
+────────────────────────
+
 > "Questo non è un gioco. È sopravvivenza."
 
 **🇮🇹 ITALIANO**
@@ -253,13 +261,13 @@ If you’re here to survive, have fun and be part of the community: welcome.
 If you’re here to ruin the experience: you will be removed.
             `)
             .setColor("DarkGreen")
-            .setFooter({ text: "⚠ Premi ACCETTO per entrare ufficialmente nel server" });
+            .setFooter({ text: "⚠ Accept/Accetto" });
 
         const row = new ActionRowBuilder()
             .addComponents(
                 new ButtonBuilder()
                     .setCustomId("accept_rules")
-                    .setLabel("✔ ACCETTO")
+                    .setLabel("✔ ACCEPT / ACCETTO")
                     .setStyle(ButtonStyle.Success)
             );
 
@@ -390,34 +398,34 @@ If it doesn't show up, search for **${SERVER_NAME}** in the DayZ server browser.
                 );
             }
 
-            const infoChannel = await getOrCreateTextChannel(
+            await getOrCreateTextChannel(
                 guild,
                 "🧭┃info-sakhal・server-info",
                 catWelcome
             );
-            const annChannel = await getOrCreateTextChannel(
+            await getOrCreateTextChannel(
                 guild,
                 "📣┃annunci・announcements",
                 catWelcome
             );
 
             // --- CANALI COMMUNITY ---
-            const chGeneral = await getOrCreateTextChannel(
+            await getOrCreateTextChannel(
                 guild,
                 "😎┃generale・general-chat",
                 catCommunity
             );
-            const chScreens = await getOrCreateTextChannel(
+            await getOrCreateTextChannel(
                 guild,
                 "📸┃screen・screenshots",
                 catCommunity
             );
-            const chRaidStories = await getOrCreateTextChannel(
+            await getOrCreateTextChannel(
                 guild,
                 "🎯┃storie-raid・raid-stories",
                 catCommunity
             );
-            const chInternational = await getOrCreateTextChannel(
+            await getOrCreateTextChannel(
                 guild,
                 "🌐┃international・english-chat",
                 catCommunity
@@ -510,6 +518,76 @@ If it doesn't show up, search for **${SERVER_NAME}** in the DayZ server browser.
 
         return;
     }
+
+    // ---------------- /ticket ----------------
+    if (interaction.commandName === "ticket") {
+
+        const guild = interaction.guild;
+        if (!guild) {
+            await interaction.reply({
+                content: "❌ Errore: guild non trovata.",
+                ephemeral: true
+            });
+            return;
+        }
+
+        // categoria supporto
+        const supportCategoryName = "🆘 Supporto • Support";
+        let catSupport = guild.channels.cache.find(
+            c => c.type === ChannelType.GuildCategory && c.name === supportCategoryName
+        );
+        if (!catSupport) {
+            catSupport = await getOrCreateCategory(guild, supportCategoryName);
+        }
+
+        // nome canale ticket
+        const baseName = `ticket-${interaction.user.username}`.toLowerCase().replace(/[^a-z0-9\-]/g, "");
+        const uniqueId = interaction.user.id.slice(-4);
+        const channelName = `${baseName}-${uniqueId}`;
+
+        // crea canale ticket privato
+        const ticketChannel = await guild.channels.create({
+            name: channelName,
+            type: ChannelType.GuildText,
+            parent: catSupport.id,
+            permissionOverwrites: [
+                {
+                    id: guild.roles.everyone.id,
+                    deny: [PermissionFlagsBits.ViewChannel]
+                },
+                {
+                    id: interaction.user.id,
+                    allow: [
+                        PermissionFlagsBits.ViewChannel,
+                        PermissionFlagsBits.SendMessages,
+                        PermissionFlagsBits.ReadMessageHistory
+                    ]
+                }
+                // Gli admin con Administrator vedono comunque il canale
+            ]
+        });
+
+        // messaggio iniziale nel ticket
+        await ticketChannel.send(`
+🎫 **Nuovo ticket aperto da <@${interaction.user.id}>**
+
+🇮🇹 Scrivi qui il tuo problema, domanda o segnalazione.  
+Più dettagli dai, più velocemente lo staff può aiutarti.
+
+🇬🇧 Write here your issue, question or report.  
+The more details you give, the easier it is for the staff to help you.
+
+Uno staffer risponderà appena possibile.
+        `);
+
+        // risposta ephemerale all'utente
+        await interaction.reply({
+            content: `✅ Ticket creato: ${ticketChannel}`,
+            ephemeral: true
+        });
+
+        return;
+    }
 });
 
 // -------------------------------------------
@@ -522,14 +600,28 @@ client.on("interactionCreate", async interaction => {
 
     const role = interaction.guild.roles.cache.get(SURVIVOR_ROLE_ID);
     if (!role) {
-        return interaction.reply({ content: "❌ Ruolo Survivor non trovato.", ephemeral: true });
+        return interaction.reply({
+            content: "❌ Ruolo Survivor non trovato / Survivor role not found.",
+            ephemeral: true
+        });
+    }
+
+    // Se ha già il ruolo → non fare nulla, solo avviso
+    if (interaction.member.roles.cache.has(SURVIVOR_ROLE_ID)) {
+        return interaction.reply({
+            content: "✅ Hai già accettato le regole ed hai il ruolo Survivor.\n✅ You already accepted the rules and you have the Survivor role.",
+            ephemeral: true
+        });
     }
 
     // Assegna ruolo
     await interaction.member.roles.add(role);
 
     // Risposta privata nel canale
-    await interaction.reply({ content: "✔ Regole accettate! Sei ora un Survivor.", ephemeral: true });
+    await interaction.reply({
+        content: "✔ Regole accettate! Sei ora un Survivor.\n✔ Rules accepted! You are now a Survivor.",
+        ephemeral: true
+    });
 
     // Messaggio nel canale nuovi utenti
     const welcomeChannel = interaction.guild.channels.cache.get(NEW_USER_CHANNEL_ID);
@@ -537,7 +629,7 @@ client.on("interactionCreate", async interaction => {
         welcomeChannel.send(`🎖 <@${interaction.user.id}> è entrato ufficialmente nel mondo malato di **Sakhal**.`);
     }
 
-    // DM al giocatore
+    // DM al giocatore: benvenuto + info server
     interaction.user.send(`
 👋 Benvenuto sopravvissuto.
 
@@ -550,6 +642,36 @@ Ora fai parte di **69x Pacific Land [Sakhal]**.
 - Sopravvivi finché puoi
 
 Good luck… you’ll need it. 💀
+
+────────────────────────
+🇮🇹 **Info server**
+
+• Nome: ${SERVER_NAME}  
+• Mappa: Sakhal  
+• Stile: ${SERVER_STYLE}  
+• Slot: ${SERVER_SLOTS}  
+• Wipe: ${SERVER_WIPE}  
+• Restart: ${SERVER_RESTART}  
+
+🔌 Direct Connect (se disponibile):  
+${SERVER_IP}
+
+Per più dettagli puoi usare il comando: **/info-sakhal** nel server Discord.
+
+────────────────────────
+🇬🇧 **Server info**
+
+• Name: ${SERVER_NAME}  
+• Map: Sakhal  
+• Style: ${SERVER_STYLE}  
+• Slots: ${SERVER_SLOTS}  
+• Wipe: ${SERVER_WIPE}  
+• Restart: ${SERVER_RESTART}  
+
+🔌 Direct Connect (if available):  
+${SERVER_IP}
+
+For more details you can use: **/info-sakhal** in Discord.
     `).catch(() => null);
 });
 
