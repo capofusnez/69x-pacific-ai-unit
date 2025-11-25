@@ -28,6 +28,7 @@ const SURVIVOR_ROLE_ID = "1442570651696107711";     // ruolo Survivor
 // --- INFO SERVER SAKHAL (MODIFICA QUI IN BASE AL TUO SERVER) ---
 const SERVER_NAME = "69x Pacific Land | Sakhal Full PvP";
 const SERVER_SLOTS = "24 SLOT";
+const SERVER_DISCORD = "Questo Discord ufficiale";
 const SERVER_WIPE = "Wipe completo ogni 30 giorni";
 const SERVER_RESTART = "Restart ogni 2 ore";
 const SERVER_MODS = "custom loot, veicoli";
