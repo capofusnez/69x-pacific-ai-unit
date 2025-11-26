@@ -1,7 +1,7 @@
 // ------------------------------------------------------------
 // 69x Pacific AI Unit - Bot Discord per 69x Pacific Land Sakhal
 // - Regole + Accept
-// - Info Sakhal
+// - Info Sakhal (allineato a configurazione server DayZ)
 // - Setup struttura canali ITA/ENG
 // - Ticket con categorie + chiusura + archivio
 // - Notifica staff per ogni nuovo ticket
@@ -56,15 +56,29 @@ const SUPPORT_CATEGORY_NAME = '🆘 Supporto • Support';
 // Nome categoria ticket chiusi
 const CLOSED_TICKETS_CATEGORY_NAME = '🔒 Ticket chiusi • Closed Tickets';
 
-// Info server DayZ Sakhal
+// ------------------------------------------------------------
+// CONFIG ATTUALE DEL SERVER DAYZ (MODIFICA QUI QUANDO CAMBIATE SETTAGGI)
+// ------------------------------------------------------------
+
 const SERVER_NAME = '69x Pacific Land | Sakhal Full PvP';
-const SERVER_IP = 'IP:PORTA (modifica qui)'; // es: "123.45.67.89:2302"
-const SERVER_SLOTS = '60 slot';
-const SERVER_WIPE = 'Wipe completo ogni 30 giorni';
-const SERVER_RESTART = 'Restart ogni 4 ore';
+
+// METTI QUI IP:PORTA REALE DEL SERVER DAYZ
+const SERVER_IP = '123.45.67.89:2302'; // ESEMPIO: "123.45.67.89:2302"
+
+const SERVER_SLOTS = '50 slot';
+const SERVER_WIPE = 'Full wipe ogni 30 giorni';
+const SERVER_RESTART = 'Restart automatico ogni 4 ore';
 const SERVER_DISCORD = 'Questo Discord ufficiale';
-const SERVER_MODS = 'Trader, custom loot, veicoli, AI (personalizza)';
-const SERVER_STYLE = 'Hardcore survival, full PvP, niente favoritismi staff';
+
+const SERVER_MODS =
+  '- Trader custom bilanciato\n' +
+  '- Loot rivisto manualmente\n' +
+  '- Veicoli espansi\n' +
+  '- AI ostili in aree dedicate\n' +
+  '- Meteo e notte più aggressivi';
+
+const SERVER_STYLE =
+  'Hardcore survival, full PvP, nessun favoritismo staff, niente gear gratis agli admin';
 
 // Percorsi usati per lo status
 const PROJECT_PATH = '/home/andrea/69x-pacific-ai-unit';
@@ -579,31 +593,48 @@ client.on(Events.InteractionCreate, async interaction => {
   // ---------------- /info-sakhal ----------------
   if (commandName === 'info-sakhal') {
     const embedInfo = new EmbedBuilder()
-      .setTitle('🧭 Info Server – 69x Pacific Land | Sakhal')
+      .setTitle('🧭 Info Server – ' + SERVER_NAME)
       .setDescription(
-        '**Nome server:** `' + SERVER_NAME + '`\n\n' +
-        '> "Sakhal non perdona. O uccidi, o sei loot."'
+        '**Mappa:** `Sakhal`\n' +
+        '> "Sakhal non perdona. O uccidi, o sei loot."\n\n' +
+        'ℹ️ Questo comando è aggiornato alla configurazione attuale del server (settaggi by Riccardo).'
       )
       .addFields(
         {
           name: '🇮🇹 Info generali',
           value:
-            '• **Mappa:** Sakhal\n' +
-            '• **Stile:** ' + SERVER_STYLE + '\n' +
+            '• **Nome server:** ' + SERVER_NAME + '\n' +
             '• **Slot:** ' + SERVER_SLOTS + '\n' +
+            '• **Stile:** ' + SERVER_STYLE + '\n' +
             '• **Wipe:** ' + SERVER_WIPE + '\n' +
             '• **Restart:** ' + SERVER_RESTART + '\n' +
-            '• **Discord:** ' + SERVER_DISCORD
+            '• **Discord:** ' + SERVER_DISCORD,
+          inline: false
         },
         {
           name: '🧰 Mod & gameplay',
-          value: SERVER_MODS
+          value: SERVER_MODS,
+          inline: false
         },
         {
           name: '🌐 Connessione / Connection',
           value:
-            '**Direct Connect:**\n`' + SERVER_IP + '`\n\n' +
-            'Se non funziona, cerca il nome **' + SERVER_NAME + '** nella lista server DayZ.'
+            '🇮🇹 **Connessione diretta:**\n' +
+            '`' + SERVER_IP + '`\n' +
+            'Se non funziona, cerca **' + SERVER_NAME + '** nella lista server DayZ.\n\n' +
+            '🇬🇧 **Direct Connect:**\n' +
+            '`' + SERVER_IP + '`\n' +
+            'If it doesn\'t work, search **' + SERVER_NAME + '** in the DayZ server browser.',
+          inline: false
+        },
+        {
+          name: '📌 Note veloci / Quick notes',
+          value:
+            '• Full PvP ovunque\n' +
+            '• Nessun favoritismo staff\n' +
+            '• Loot e trader bilanciati a mano\n' +
+            '• Rispetta le regole sia su Discord che in-game',
+          inline: false
         }
       )
       .setColor('DarkGold');
