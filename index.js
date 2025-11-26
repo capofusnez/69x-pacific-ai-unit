@@ -1,6 +1,6 @@
 // ------------------------------------------------------------
 // 69x Pacific AI Unit - Bot Discord per 69x Pacific Land Sakhal
-// Versione per Raspberry Pi con ticket + bot-status + ticket chiusi
+// Versione per Raspberry Pi con ticket + bot-status + ticket chiusi + categorie ticket
 // ------------------------------------------------------------
 
 require('dotenv').config();
@@ -44,7 +44,7 @@ const NEW_USER_CHANNEL_ID = '1442568117296562266';
 // Ruolo che viene assegnato quando accettano le regole
 const SURVIVOR_ROLE_ID = '1442570651696107711';
 
-// Nome categoria supporto (usata per i ticket)
+// Nome categoria supporto (usata per i ticket aperti)
 const SUPPORT_CATEGORY_NAME = '🆘 Supporto • Support';
 
 // Nome categoria ticket chiusi
@@ -215,13 +215,46 @@ function getLastAutoUpdate() {
 }
 
 // ------------------------------------------------------------
-// HELPER PER I TICKET
+// HELPER PER I TICKET (con categorie/tipi)
 // ------------------------------------------------------------
 
-async function createTicketChannel(guild, user) {
+const TICKET_TYPES = {
+  support: {
+    prefix: 'ticket-support',
+    labelIt: 'Supporto',
+    labelEn: 'Support'
+  },
+  bug: {
+    prefix: 'ticket-bug',
+    labelIt: 'Bug / Problema tecnico',
+    labelEn: 'Bug report'
+  },
+  report: {
+    prefix: 'ticket-report',
+    labelIt: 'Segnalazione giocatore / comportamento',
+    labelEn: 'Player / behaviour report'
+  },
+  request: {
+    prefix: 'ticket-request',
+    labelIt: 'Richiesta / Suggestion',
+    labelEn: 'Request / suggestion'
+  },
+  ban: {
+    prefix: 'ticket-ban',
+    labelIt: 'Ban & Appeal',
+    labelEn: 'Ban & appeal'
+  }
+};
+
+function getTicketTypeConfig(ticketType) {
+  return TICKET_TYPES[ticketType] || TICKET_TYPES.support;
+}
+
+async function createTicketChannel(guild, user, ticketType) {
+  const typeCfg = getTicketTypeConfig(ticketType);
   const catSupport = await getOrCreateCategory(guild, SUPPORT_CATEGORY_NAME);
 
-  const baseName = ('ticket-' + user.username)
+  const baseName = (typeCfg.prefix + '-' + user.username)
     .toLowerCase()
     .replace(/[^a-z0-9\-]/g, '');
   const uniqueId = user.id.slice(-4);
@@ -231,7 +264,13 @@ async function createTicketChannel(guild, user) {
     name: channelName,
     type: ChannelType.GuildText,
     parent: catSupport.id,
-    topic: 'Ticket aperto da USERID: ' + user.id,
+    topic:
+      'Ticket tipo: ' +
+      typeCfg.labelIt +
+      ' (' +
+      ticketType +
+      ') - aperto da USERID: ' +
+      user.id,
     permissionOverwrites: [
       {
         id: guild.roles.everyone.id,
@@ -248,6 +287,32 @@ async function createTicketChannel(guild, user) {
     ]
   });
 
+  let introTypeTextIt = '';
+  let introTypeTextEn = '';
+
+  switch (ticketType) {
+    case 'bug':
+      introTypeTextIt = '🛠 **Tipo:** Bug / Problema tecnico';
+      introTypeTextEn = '🛠 **Type:** Bug / Technical issue';
+      break;
+    case 'report':
+      introTypeTextIt = '🚨 **Tipo:** Segnalazione giocatore / comportamento';
+      introTypeTextEn = '🚨 **Type:** Player / behaviour report';
+      break;
+    case 'request':
+      introTypeTextIt = '💡 **Tipo:** Richiesta / Suggestion';
+      introTypeTextEn = '💡 **Type:** Request / suggestion';
+      break;
+    case 'ban':
+      introTypeTextIt = '⚖️ **Tipo:** Ban & Appeal';
+      introTypeTextEn = '⚖️ **Type:** Ban & appeal';
+      break;
+    default:
+      introTypeTextIt = '🧰 **Tipo:** Supporto generale';
+      introTypeTextEn = '🧰 **Type:** General support';
+      break;
+  }
+
   const closeRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('ticket_close')
@@ -257,6 +322,10 @@ async function createTicketChannel(guild, user) {
 
   await channel.send({
     content:
+      introTypeTextIt +
+      ' | ' +
+      introTypeTextEn +
+      '\n\n' +
       '🎫 **Nuovo ticket aperto da <@' +
       user.id +
       '>**\n\n' +
@@ -288,10 +357,10 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
     .setName('ticket')
-    .setDescription('Apri un ticket con lo staff / Open a support ticket'),
+    .setDescription('Apri un ticket con lo staff (supporto generale)'),
   new SlashCommandBuilder()
     .setName('ticket-panel')
-    .setDescription('Invia il pannello con pulsante per aprire ticket (solo admin)')
+    .setDescription('Invia il pannello con pulsanti per aprire ticket (solo admin)')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
     .setName('bot-status')
@@ -499,6 +568,8 @@ client.on(Events.InteractionCreate, async interaction => {
       const catVoice = await getOrCreateCategory(guild, '🎧 Vocali • Voice Channels');
       const catSupport = await getOrCreateCategory(guild, SUPPORT_CATEGORY_NAME);
       const catStaff = await getOrCreateCategory(guild, '🛠 Staff • Staff Only');
+      const catClosed = await getOrCreateCategory(guild, CLOSED_TICKETS_CATEGORY_NAME);
+      await getOrCreateTextChannel(guild, '🗄┃archivio-ticket', catClosed);
 
       // Welcome
       let rulesChannel = await guild.channels.fetch(RULES_CHANNEL_ID).catch(() => null);
@@ -560,7 +631,7 @@ client.on(Events.InteractionCreate, async interaction => {
     return;
   }
 
-  // ---------------- /ticket (apertura via comando) ----------------
+  // ---------------- /ticket (apertura via comando generico) ----------------
   if (commandName === 'ticket') {
     const guild = interaction.guild;
     if (!guild) {
@@ -571,10 +642,10 @@ client.on(Events.InteractionCreate, async interaction => {
       return;
     }
 
-    const ticketChannel = await createTicketChannel(guild, interaction.user);
+    const ticketChannel = await createTicketChannel(guild, interaction.user, 'support');
 
     await interaction.reply({
-      content: '✅ Ticket creato: ' + ticketChannel.toString(),
+      content: '✅ Ticket di supporto creato: ' + ticketChannel.toString(),
       ephemeral: true
     });
     return;
@@ -594,25 +665,49 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     const embed = new EmbedBuilder()
-      .setTitle('🎫 Supporto • Support Tickets')
+      .setTitle('🎫 Sistema Ticket • Ticket System')
       .setDescription(
-        '🇮🇹 Hai bisogno di aiuto, vuoi segnalare un problema o fare una richiesta allo staff?\n\n' +
-        'Premi il pulsante qui sotto per aprire un ticket dedicato, visibile solo a te e allo staff.\n\n' +
-        '🇬🇧 Need help, want to report an issue or contact staff?\n\n' +
-        'Press the button below to open a private ticket, visible only to you and the staff.'
+        '🇮🇹 Seleziona il tipo di ticket di cui hai bisogno:\n\n' +
+        '• 🧰 Supporto generale\n' +
+        '• 🛠 Bug / Problema tecnico\n' +
+        '• 🚨 Segnalazione giocatore / comportamento\n' +
+        '• 💡 Richiesta / Suggestion\n' +
+        '• ⚖️ Ban & Appeal\n\n' +
+        '🇬🇧 Choose the type of ticket you need:\n\n' +
+        '• 🧰 General support\n' +
+        '• 🛠 Bug / Technical issue\n' +
+        '• 🚨 Player / behaviour report\n' +
+        '• 💡 Request / suggestion\n' +
+        '• ⚖️ Ban & appeal'
       )
       .setColor('Purple');
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId('ticket_open')
-        .setLabel('🎫 Apri ticket / Open ticket')
-        .setStyle(ButtonStyle.Primary)
+        .setCustomId('ticket_support')
+        .setLabel('🧰 Supporto / Support')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('ticket_bug')
+        .setLabel('🛠 Bug Report')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('ticket_report')
+        .setLabel('🚨 Segnalazioni / Reports')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('ticket_request')
+        .setLabel('💡 Richieste / Requests')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId('ticket_ban')
+        .setLabel('⚖️ Ban & Appeal')
+        .setStyle(ButtonStyle.Danger)
     );
 
     await interaction.channel.send({ embeds: [embed], components: [row] });
     await interaction.reply({
-      content: '✅ Pannello ticket inviato in questo canale.',
+      content: '✅ Pannello ticket con categorie inviato in questo canale.',
       ephemeral: true
     });
     return;
@@ -781,8 +876,14 @@ client.on(Events.InteractionCreate, async interaction => {
     return;
   }
 
-  // --------- Bottone Apertura Ticket ----------
-  if (customId === 'ticket_open') {
+  // --------- Bottoni Apertura Ticket per Categoria ----------
+  if (
+    customId === 'ticket_support' ||
+    customId === 'ticket_bug' ||
+    customId === 'ticket_report' ||
+    customId === 'ticket_request' ||
+    customId === 'ticket_ban'
+  ) {
     try {
       const guild = interaction.guild;
       if (!guild) {
@@ -793,14 +894,24 @@ client.on(Events.InteractionCreate, async interaction => {
         return;
       }
 
-      const ticketChannel = await createTicketChannel(guild, interaction.user);
+      let ticketType = 'support';
+      if (customId === 'ticket_bug') ticketType = 'bug';
+      else if (customId === 'ticket_report') ticketType = 'report';
+      else if (customId === 'ticket_request') ticketType = 'request';
+      else if (customId === 'ticket_ban') ticketType = 'ban';
+
+      const ticketChannel = await createTicketChannel(
+        guild,
+        interaction.user,
+        ticketType
+      );
 
       await interaction.reply({
         content: '✅ Ticket creato: ' + ticketChannel.toString(),
         ephemeral: true
       });
     } catch (err) {
-      console.error('❌ Errore bottone ticket_open:', err);
+      console.error('❌ Errore bottone apertura ticket categoria:', err);
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({
           content: '⚠ Errore nella creazione del ticket. Avvisa lo staff.',
@@ -859,9 +970,8 @@ client.on(Events.InteractionCreate, async interaction => {
       );
 
       let newName = channel.name;
-      if (newName.startsWith('ticket-')) {
-        newName = newName.replace('ticket-', 'closed-');
-      }
+      // ticket-support-... -> closed-support-...
+      newName = newName.replace(/^ticket-/, 'closed-');
 
       await channel.setParent(closedCategory.id);
       await channel.setName(newName);
