@@ -1,12 +1,13 @@
 // ------------------------------------------------------------
 // 69x Pacific AI Unit - Bot Discord per 69x Pacific Land Sakhal
-// Versione per Raspberry Pi con comando /bot-status
+// Versione per Raspberry Pi con ticket + bot-status
 // ------------------------------------------------------------
 
 require("dotenv").config();
 
 const os = require("os");
 const { exec } = require("child_process");
+const fs = require("fs");
 
 const {
     Client,
@@ -25,7 +26,7 @@ const {
 } = require("discord.js");
 
 // ------------------------------------------------------------
-// CONFIGURAZIONE BASE (MODIFICA QUI SE TI SERVE)
+// CONFIGURAZIONE BASE
 // ------------------------------------------------------------
 
 // ID dell'applicazione/bot (CLIENT ID) - NON il token
@@ -42,6 +43,9 @@ const NEW_USER_CHANNEL_ID = "1442568117296562266";
 
 // Ruolo che viene assegnato quando accettano le regole
 const SURVIVOR_ROLE_ID = "1442570651696107711";
+
+// Nome categoria supporto (usata per i ticket)
+const SUPPORT_CATEGORY_NAME = "🆘 Supporto • Support";
 
 // Info server DayZ Sakhal
 const SERVER_NAME = "69x Pacific Land | Sakhal Full PvP";
@@ -72,7 +76,7 @@ const client = new Client({
 });
 
 // ------------------------------------------------------------
-// HELPER PER CATEGORIE E CANALI (USATI DA /setup-structure)
+// HELPER PER CATEGORIE E CANALI
 // ------------------------------------------------------------
 
 async function getOrCreateCategory(guild, name) {
@@ -181,10 +185,8 @@ async function getGitShortCommit() {
 }
 
 async function getRpiTemperature() {
-    // usa vcgencmd se disponibile
     try {
         const out = await execPromise("vcgencmd measure_temp", "/");
-        // formato tipico: temp=48.0'C
         const match = out.match(/temp=([0-9.]+)'C/);
         if (match) return `${match[1]}°C`;
         return out || "n/d";
@@ -193,7 +195,6 @@ async function getRpiTemperature() {
     }
 }
 
-const fs = require("fs");
 function getLastAutoUpdate() {
     try {
         if (!fs.existsSync(AUTOUPDATE_LOG)) return "nessun log";
@@ -208,6 +209,64 @@ function getLastAutoUpdate() {
     } catch {
         return "errore lettura log";
     }
+}
+
+// ------------------------------------------------------------
+// HELPER PER I TICKET (creazione canale + messaggio + pulsante chiusura)
+// ------------------------------------------------------------
+
+async function createTicketChannel(guild, user) {
+    const catSupport = await getOrCreateCategory(guild, SUPPORT_CATEGORY_NAME);
+
+    const baseName = `ticket-${user.username}`.toLowerCase().replace(/[^a-z0-9\-]/g, "");
+    const uniqueId = user.id.slice(-4);
+    const channelName = `${baseName}-${uniqueId}`;
+
+    const channel = await guild.channels.create({
+        name: channelName,
+        type: ChannelType.GuildText,
+        parent: catSupport.id,
+        topic: `Ticket aperto da USERID: ${user.id}`,
+        permissionOverwrites: [
+            {
+                id: guild.roles.everyone.id,
+                deny: [PermissionFlagsBits.ViewChannel]
+            },
+            {
+                id: user.id,
+                allow: [
+                    PermissionFlagsBits.ViewChannel,
+                    PermissionFlagsBits.SendMessages,
+                    PermissionFlagsBits.ReadMessageHistory
+                ]
+            }
+            // gli admin con Administrator vedono comunque il canale
+        ]
+    });
+
+    const closeRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId("ticket_close")
+            .setLabel("🔒 Chiudi ticket / Close ticket")
+            .setStyle(ButtonStyle.Danger)
+    );
+
+    await channel.send({
+        content: `
+🎫 **Nuovo ticket aperto da <@${user.id}>**
+
+🇮🇹 Scrivi qui il tuo problema, domanda o segnalazione.  
+Più dettagli dai, più velocemente lo staff può aiutarti.
+
+🇬🇧 Write here your issue, question or report.  
+The more details you give, the easier it is for the staff to help you.
+
+Quando hai finito, puoi chiudere il ticket con il pulsante qui sotto.
+        `,
+        components: [closeRow]
+    });
+
+    return channel;
 }
 
 // ------------------------------------------------------------
@@ -229,6 +288,10 @@ const commands = [
         .setName("ticket")
         .setDescription("Apri un ticket con lo staff / Open a support ticket"),
     new SlashCommandBuilder()
+        .setName("ticket-panel")
+        .setDescription("Invia il pannello con pulsante per aprire ticket (solo admin)")
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    new SlashCommandBuilder()
         .setName("bot-status")
         .setDescription("Mostra stato bot e Raspberry Pi (solo admin)")
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
@@ -236,7 +299,6 @@ const commands = [
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 
-// Registrazione comandi sul server (guild commands)
 async function registerCommands() {
     try {
         console.log("🔄 Registrazione comandi slash...");
@@ -260,7 +322,7 @@ client.once("ready", () => {
 });
 
 // ------------------------------------------------------------
-// EVENTO: NUOVO MEMBRO ENTRA NEL SERVER (JOIN)
+// EVENTO: NUOVO MEMBRO ENTRA NEL SERVER
 // ------------------------------------------------------------
 
 client.on(Events.GuildMemberAdd, async member => {
@@ -270,7 +332,6 @@ client.on(Events.GuildMemberAdd, async member => {
             channel.send(`🎖 <@${member.id}> è entrato nel territorio di **Sakhal**.`);
         }
 
-        // Messaggio privato semplice
         await member.send(`
 👋 Benvenuto su **${SERVER_NAME}**
 
@@ -281,13 +342,13 @@ Ricorda:
 
 Good luck, survivor. 💀
         `);
-    } catch (err) {
+    } catch {
         console.log("⚠ Impossibile mandare DM all'utente (probabile DM chiusi).");
     }
 });
 
 // ------------------------------------------------------------
-// EVENTO: INTERAZIONI (COMANDI SLASH)
+// EVENTO: INTERAZIONI COMANDI SLASH
 // ------------------------------------------------------------
 
 client.on(Events.InteractionCreate, async interaction => {
@@ -404,7 +465,7 @@ Staff can change rules anytime to protect the community.
 • **Mappa:** Sakhal  
 • **Stile:** ${SERVER_STYLE}  
 • **Slot:** ${SERVER_SLOTS}  
-• **Wipe:** ${SERVER_WIPE}  
+                                • **Wipe:** ${SERVER_WIPE}  
 • **Restart:** ${SERVER_RESTART}  
 • **Discord:** ${SERVER_DISCORD}  
                     `
@@ -460,7 +521,7 @@ Se non funziona, cerca il nome **${SERVER_NAME}** nella lista server DayZ.
             const catCommunity = await getOrCreateCategory(guild, "💬 Community • Community");
             const catInGame = await getOrCreateCategory(guild, "🎮 In gioco • In-Game");
             const catVoice = await getOrCreateCategory(guild, "🎧 Vocali • Voice Channels");
-            const catSupport = await getOrCreateCategory(guild, "🆘 Supporto • Support");
+            const catSupport = await getOrCreateCategory(guild, SUPPORT_CATEGORY_NAME);
             const catStaff = await getOrCreateCategory(guild, "🛠 Staff • Staff Only");
 
             // --- CANALI WELCOME ---
@@ -556,308 +617,4 @@ Se non funziona, cerca il nome **${SERVER_NAME}** nella lista server DayZ.
             );
 
             // --- SUPPORTO ---
-            await getOrCreateTextChannel(
-                guild,
-                "🎫┃ticket-supporto・tickets",
-                catSupport
-            );
-            await getOrCreateTextChannel(
-                guild,
-                "🐞┃bug-report・bug-report",
-                catSupport
-            );
-            await getOrCreateTextChannel(
-                guild,
-                "💡┃suggerimenti・suggestions",
-                catSupport
-            );
-
-            // --- STAFF ---
-            await getOrCreateTextChannel(
-                guild,
-                "🚫┃admin-log",
-                catStaff
-            );
-            await getOrCreateTextChannel(
-                guild,
-                "🛠┃staff-chat",
-                catStaff
-            );
-            await getOrCreateTextChannel(
-                guild,
-                "📋┃ban-log",
-                catStaff
-            );
-
-            await interaction.editReply(
-                "✅ Struttura categorie/canali ITA/ENG creata/aggiornata."
-            );
-
-        } catch (err) {
-            console.error("❌ Errore setup-structure:", err);
-            await interaction.editReply(
-                "❌ Si è verificato un errore durante la creazione della struttura."
-            );
-        }
-
-        return;
-    }
-
-    // ---------------- /ticket ----------------
-    if (interaction.commandName === "ticket") {
-
-        const guild = interaction.guild;
-        if (!guild) {
-            await interaction.reply({
-                content: "❌ Errore: guild non trovata.",
-                ephemeral: true
-            });
-            return;
-        }
-
-        const supportCategoryName = "🆘 Supporto • Support";
-        let catSupport = guild.channels.cache.find(
-            c => c.type === ChannelType.GuildCategory && c.name === supportCategoryName
-        );
-        if (!catSupport) {
-            catSupport = await getOrCreateCategory(guild, supportCategoryName);
-        }
-
-        const baseName = `ticket-${interaction.user.username}`.toLowerCase().replace(/[^a-z0-9\-]/g, "");
-        const uniqueId = interaction.user.id.slice(-4);
-        const channelName = `${baseName}-${uniqueId}`;
-
-        const ticketChannel = await guild.channels.create({
-            name: channelName,
-            type: ChannelType.GuildText,
-            parent: catSupport.id,
-            permissionOverwrites: [
-                {
-                    id: guild.roles.everyone.id,
-                    deny: [PermissionFlagsBits.ViewChannel]
-                },
-                {
-                    id: interaction.user.id,
-                    allow: [
-                        PermissionFlagsBits.ViewChannel,
-                        PermissionFlagsBits.SendMessages,
-                        PermissionFlagsBits.ReadMessageHistory
-                    ]
-                }
-                // gli admin con Administrator vedono comunque il canale
-            ]
-        });
-
-        await ticketChannel.send(`
-🎫 **Nuovo ticket aperto da <@${interaction.user.id}>**
-
-🇮🇹 Scrivi qui il tuo problema, domanda o segnalazione.  
-Più dettagli dai, più velocemente lo staff può aiutarti.
-
-🇬🇧 Write here your issue, question or report.  
-The more details you give, the easier it is for the staff to help you.
-
-Uno staffer risponderà appena possibile.
-        `);
-
-        await interaction.reply({
-            content: `✅ Ticket creato: ${ticketChannel}`,
-            ephemeral: true
-        });
-
-        return;
-    }
-
-    // ---------------- /bot-status ----------------
-    if (interaction.commandName === "bot-status") {
-
-        if (
-            !interaction.memberPermissions ||
-            !interaction.memberPermissions.has(PermissionFlagsBits.Administrator)
-        ) {
-            await interaction.reply({
-                content: "❌ Solo un amministratore può usare questo comando.",
-                ephemeral: true
-            });
-            return;
-        }
-
-        await interaction.deferReply({ ephemeral: true });
-
-        try {
-            const guild = interaction.guild;
-
-            const botUptime = formatDuration(client.uptime || 0);
-            const sysUptime = getSystemUptime();
-            const memUsage = getMemoryUsage();
-            const temp = await getRpiTemperature();
-            const commit = await getGitShortCommit();
-            const lastUpdate = getLastAutoUpdate();
-            const ping = Math.round(client.ws.ping);
-
-            const embed = new EmbedBuilder()
-                .setTitle("📊 Bot & Raspberry Status")
-                .setDescription("Stato attuale del bot e del Raspberry Pi.")
-                .setColor("DarkBlue")
-                .addFields(
-                    {
-                        name: "🤖 Bot",
-                        value: `
-• **Nome:** ${client.user.tag}
-• **Ping Discord:** \`${ping} ms\`
-• **Uptime bot:** \`${botUptime}\`
-• **Server Discord:** ${guild ? guild.name : "n/d"}
-                        `
-                    },
-                    {
-                        name: "📦 Codice",
-                        value: `
-• **Commit attuale:** \`${commit}\`
-• **Ultimo auto-update:** \`${lastUpdate}\`
-                        `
-                    },
-                    {
-                        name: "🧠 Raspberry Pi",
-                        value: `
-• **Hostname:** \`${os.hostname()}\`
-• **Uptime sistema:** \`${sysUptime}\`
-                        `
-                    },
-                    {
-                        name: "🔥 Risorse",
-                        value: `
-• **RAM:** ${memUsage}
-• **Temperatura CPU:** \`${temp}\`
-                        `
-                    }
-                )
-                .setTimestamp();
-
-            await interaction.editReply({ embeds: [embed] });
-
-        } catch (err) {
-            console.error("❌ Errore /bot-status:", err);
-            await interaction.editReply({
-                content: "⚠ Errore nel recuperare lo stato. Controlla i log del Raspberry.",
-            });
-        }
-
-        return;
-    }
-});
-
-// ------------------------------------------------------------
-// EVENTO: BOTTONI (ACCETTO REGOLE)
-// ------------------------------------------------------------
-
-client.on(Events.InteractionCreate, async interaction => {
-    if (!interaction.isButton()) return;
-    if (interaction.customId !== "accept_rules") return;
-
-    try {
-        const member = interaction.member;
-
-        if (!SURVIVOR_ROLE_ID) {
-            return interaction.reply({
-                content: "❌ Errore di configurazione: ruolo Survivor non impostato nel bot.",
-                ephemeral: true
-            });
-        }
-
-        const role = interaction.guild.roles.cache.get(SURVIVOR_ROLE_ID);
-        if (!role) {
-            return interaction.reply({
-                content: "❌ Non trovo il ruolo Survivor sul server. Avvisa un admin.",
-                ephemeral: true
-            });
-        }
-
-        // Se ha già il ruolo
-        if (member.roles.cache.has(SURVIVOR_ROLE_ID)) {
-            return interaction.reply({
-                content: "✅ Hai già accettato le regole ed hai già il ruolo Survivor.",
-                ephemeral: true
-            });
-        }
-
-        await member.roles.add(role);
-
-        await interaction.update({
-            content: "✔ Hai accettato le regole. Benvenuto sopravvissuto.",
-            components: []
-        });
-
-        // DM con info server
-        try {
-            await member.send(`
-👋 Benvenuto sopravvissuto.
-
-Ora fai parte di **${SERVER_NAME}**.
-
-🔥 Consigli:
-- Non fidarti di nessuno
-- Loota tutto
-- Spara per primo
-- Sopravvivi finché puoi
-
-Good luck… you’ll need it. 💀
-
-────────────────────────
-🇮🇹 **Info server**
-
-• Nome: ${SERVER_NAME}  
-• Mappa: Sakhal  
-• Stile: ${SERVER_STYLE}  
-• Slot: ${SERVER_SLOTS}  
-• Wipe: ${SERVER_WIPE}  
-• Restart: ${SERVER_RESTART}  
-
-🔌 Direct Connect (se disponibile):  
-${SERVER_IP}
-
-────────────────────────
-🇬🇧 **Server info**
-
-• Name: ${SERVER_NAME}  
-• Map: Sakhal  
-• Style: ${SERVER_STYLE}  
-• Slots: ${SERVER_SLOTS}  
-• Wipe: ${SERVER_WIPE}  
-• Restart: ${SERVER_RESTART}  
-
-🔌 Direct Connect:  
-${SERVER_IP}
-            `);
-        } catch (err) {
-            console.log("⚠ DM non consegnato (utente con DM chiusi).");
-        }
-
-    } catch (err) {
-        console.error("❌ Errore nel bottone accept_rules:", err);
-        if (!interaction.replied && !interaction.deferred) {
-            interaction.reply({
-                content: "⚠ Errore interno durante l'accettazione delle regole. Avvisa lo staff.",
-                ephemeral: true
-            }).catch(() => {});
-        }
-    }
-});
-
-// ------------------------------------------------------------
-// GESTIONE ERRORI GLOBALI (PER NON FAR CRASHARE IL BOT)
-// ------------------------------------------------------------
-
-process.on("unhandledRejection", (reason, promise) => {
-    console.error("🚨 UNHANDLED REJECTION:", reason);
-});
-
-process.on("uncaughtException", err => {
-    console.error("🚨 UNCAUGHT EXCEPTION:", err);
-});
-
-// ------------------------------------------------------------
-// AVVIO BOT
-// ------------------------------------------------------------
-
-registerCommands();
-client.login(process.env.DISCORD_TOKEN);
+            await getOrCreateTextChanne
