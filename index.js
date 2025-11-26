@@ -1,9 +1,12 @@
 // ------------------------------------------------------------
 // 69x Pacific AI Unit - Bot Discord per 69x Pacific Land Sakhal
-// Versione per Raspberry Pi (nessuna dipendenza da Render/Railway)
+// Versione per Raspberry Pi con comando /bot-status
 // ------------------------------------------------------------
 
 require("dotenv").config();
+
+const os = require("os");
+const { exec } = require("child_process");
 
 const {
     Client,
@@ -49,6 +52,10 @@ const SERVER_RESTART = "Restart ogni 4 ore";
 const SERVER_DISCORD = "Questo Discord ufficiale";
 const SERVER_MODS = "Trader, custom loot, veicoli, AI (personalizza)";
 const SERVER_STYLE = "Hardcore survival, full PvP, niente favoritismi staff";
+
+// Percorsi usati per lo status
+const PROJECT_PATH = "/home/andrea/69x-pacific-ai-unit";
+const AUTOUPDATE_LOG = "/home/andrea/pacificbot-autoupdate.log";
 
 // ------------------------------------------------------------
 // CREAZIONE CLIENT DISCORD
@@ -114,6 +121,96 @@ async function getOrCreateVoiceChannel(guild, name, parentCategory) {
 }
 
 // ------------------------------------------------------------
+// FUNZIONI HELPER PER /bot-status
+// ------------------------------------------------------------
+
+function formatDuration(ms) {
+    const totalSeconds = Math.floor(ms / 1000);
+    const d = Math.floor(totalSeconds / 86400);
+    const h = Math.floor((totalSeconds % 86400) / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    const parts = [];
+    if (d > 0) parts.push(`${d}d`);
+    if (h > 0) parts.push(`${h}h`);
+    if (m > 0) parts.push(`${m}m`);
+    parts.push(`${s}s`);
+    return parts.join(" ");
+}
+
+function getSystemUptime() {
+    const seconds = os.uptime();
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    const parts = [];
+    if (d > 0) parts.push(`${d}d`);
+    if (h > 0) parts.push(`${h}h`);
+    if (m > 0) parts.push(`${m}m`);
+    parts.push(`${s}s`);
+    return parts.join(" ");
+}
+
+function getMemoryUsage() {
+    const total = os.totalmem();
+    const free = os.freemem();
+    const used = total - free;
+    const usedMB = (used / 1024 / 1024).toFixed(0);
+    const totalMB = (total / 1024 / 1024).toFixed(0);
+    const perc = ((used / total) * 100).toFixed(1);
+    return `${usedMB}MB / ${totalMB}MB (${perc}%)`;
+}
+
+function execPromise(cmd, cwd = PROJECT_PATH) {
+    return new Promise((resolve, reject) => {
+        exec(cmd, { cwd }, (error, stdout) => {
+            if (error) return reject(error);
+            resolve(stdout.trim());
+        });
+    });
+}
+
+async function getGitShortCommit() {
+    try {
+        const out = await execPromise("git rev-parse --short HEAD");
+        return out || "n/d";
+    } catch {
+        return "n/d";
+    }
+}
+
+async function getRpiTemperature() {
+    // usa vcgencmd se disponibile
+    try {
+        const out = await execPromise("vcgencmd measure_temp", "/");
+        // formato tipico: temp=48.0'C
+        const match = out.match(/temp=([0-9.]+)'C/);
+        if (match) return `${match[1]}°C`;
+        return out || "n/d";
+    } catch {
+        return "n/d";
+    }
+}
+
+const fs = require("fs");
+function getLastAutoUpdate() {
+    try {
+        if (!fs.existsSync(AUTOUPDATE_LOG)) return "nessun log";
+        const content = fs.readFileSync(AUTOUPDATE_LOG, "utf8");
+        const lines = content.trim().split("\n").reverse();
+        for (const line of lines) {
+            if (line.includes("AUTO-UPDATE")) {
+                return line.replace("===== ", "").replace(" =====", "").trim();
+            }
+        }
+        return "nessuna voce trovata";
+    } catch {
+        return "errore lettura log";
+    }
+}
+
+// ------------------------------------------------------------
 // DEFINIZIONE COMANDI SLASH
 // ------------------------------------------------------------
 
@@ -126,10 +223,15 @@ const commands = [
         .setDescription("Mostra le info del server DayZ Sakhal"),
     new SlashCommandBuilder()
         .setName("setup-structure")
-        .setDescription("Crea/organizza categorie e canali ITA/ENG (solo admin)"),
+        .setDescription("Crea/organizza categorie e canali ITA/ENG (solo admin)")
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     new SlashCommandBuilder()
         .setName("ticket")
-        .setDescription("Apri un ticket con lo staff / Open a support ticket")
+        .setDescription("Apri un ticket con lo staff / Open a support ticket"),
+    new SlashCommandBuilder()
+        .setName("bot-status")
+        .setDescription("Mostra stato bot e Raspberry Pi (solo admin)")
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
@@ -159,7 +261,6 @@ client.once("ready", () => {
 
 // ------------------------------------------------------------
 // EVENTO: NUOVO MEMBRO ENTRA NEL SERVER (JOIN)
-// (MESSAGGIO DI BENVENUTO MINIMALE)
 // ------------------------------------------------------------
 
 client.on(Events.GuildMemberAdd, async member => {
@@ -514,7 +615,6 @@ Se non funziona, cerca il nome **${SERVER_NAME}** nella lista server DayZ.
             return;
         }
 
-        // Categoria supporto
         const supportCategoryName = "🆘 Supporto • Support";
         let catSupport = guild.channels.cache.find(
             c => c.type === ChannelType.GuildCategory && c.name === supportCategoryName
@@ -564,6 +664,83 @@ Uno staffer risponderà appena possibile.
             content: `✅ Ticket creato: ${ticketChannel}`,
             ephemeral: true
         });
+
+        return;
+    }
+
+    // ---------------- /bot-status ----------------
+    if (interaction.commandName === "bot-status") {
+
+        if (
+            !interaction.memberPermissions ||
+            !interaction.memberPermissions.has(PermissionFlagsBits.Administrator)
+        ) {
+            await interaction.reply({
+                content: "❌ Solo un amministratore può usare questo comando.",
+                ephemeral: true
+            });
+            return;
+        }
+
+        await interaction.deferReply({ ephemeral: true });
+
+        try {
+            const guild = interaction.guild;
+
+            const botUptime = formatDuration(client.uptime || 0);
+            const sysUptime = getSystemUptime();
+            const memUsage = getMemoryUsage();
+            const temp = await getRpiTemperature();
+            const commit = await getGitShortCommit();
+            const lastUpdate = getLastAutoUpdate();
+            const ping = Math.round(client.ws.ping);
+
+            const embed = new EmbedBuilder()
+                .setTitle("📊 Bot & Raspberry Status")
+                .setDescription("Stato attuale del bot e del Raspberry Pi.")
+                .setColor("DarkBlue")
+                .addFields(
+                    {
+                        name: "🤖 Bot",
+                        value: `
+• **Nome:** ${client.user.tag}
+• **Ping Discord:** \`${ping} ms\`
+• **Uptime bot:** \`${botUptime}\`
+• **Server Discord:** ${guild ? guild.name : "n/d"}
+                        `
+                    },
+                    {
+                        name: "📦 Codice",
+                        value: `
+• **Commit attuale:** \`${commit}\`
+• **Ultimo auto-update:** \`${lastUpdate}\`
+                        `
+                    },
+                    {
+                        name: "🧠 Raspberry Pi",
+                        value: `
+• **Hostname:** \`${os.hostname()}\`
+• **Uptime sistema:** \`${sysUptime}\`
+                        `
+                    },
+                    {
+                        name: "🔥 Risorse",
+                        value: `
+• **RAM:** ${memUsage}
+• **Temperatura CPU:** \`${temp}\`
+                        `
+                    }
+                )
+                .setTimestamp();
+
+            await interaction.editReply({ embeds: [embed] });
+
+        } catch (err) {
+            console.error("❌ Errore /bot-status:", err);
+            await interaction.editReply({
+                content: "⚠ Errore nel recuperare lo stato. Controlla i log del Raspberry.",
+            });
+        }
 
         return;
     }
