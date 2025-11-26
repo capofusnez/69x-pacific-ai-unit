@@ -1,12 +1,13 @@
 // ------------------------------------------------------------
 // 69x Pacific AI Unit - Bot Discord per 69x Pacific Land Sakhal
 // - Regole + Accept
-// - Info Sakhal (allineato a configurazione server DayZ)
+// - Info Sakhal (config server DayZ)
 // - Setup struttura canali ITA/ENG
 // - Ticket con categorie + chiusura + archivio
 // - Notifica staff per ogni nuovo ticket
 // - /bot-status con info Raspberry
 // - Auto-clean messaggi + /clean-channel
+// - /ask-ai: assistente AI per il server (OpenAI)
 // ------------------------------------------------------------
 
 require('dotenv').config();
@@ -14,6 +15,27 @@ require('dotenv').config();
 const os = require('os');
 const { exec } = require('child_process');
 const fs = require('fs');
+
+// --- OpenAI (AI assistant) ---
+const OpenAI = require('openai');
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
+const AI_MODEL = 'gpt-4.1-mini';
+
+const AI_SYSTEM_PROMPT = `
+You are "69x Pacific AI Unit", the official assistant of the Discord & DayZ server
+"69x Pacific Land | Sakhal Full PvP | DayZ". 
+
+Your job:
+- Answer clearly and concisely (max about 6-8 lines).
+- Automatically reply in the same language of the user (Italian or English).
+- You can explain rules, gameplay, wipes, PvP, loot, basebuilding, tickets and server info.
+- Never provide cheats, hacks, scripts, dupes, glitches or ways to break DayZ rules.
+If user asks for cheating, politely refuse and suggest fair play instead.
+`;
 
 const {
   Client,
@@ -242,6 +264,72 @@ function getLastAutoUpdate() {
 }
 
 // ------------------------------------------------------------
+// HELPER: chiamata all’AI OpenAI
+// ------------------------------------------------------------
+
+/**
+ * Chiede una risposta all'AI di OpenAI.
+ * @param {string} question - Domanda dell'utente.
+ * @param {string} username - Nome dell'utente (per contesto).
+ * @returns {Promise<string>} - Testo della risposta.
+ */
+async function getAIResponse(question, username) {
+  // Se manca la chiave, avvisa
+  if (!process.env.OPENAI_API_KEY) {
+    return '⚠️ L’AI non è configurata (manca OPENAI_API_KEY). Avvisa un admin.';
+  }
+
+  // Blocco richieste legate a cheat/hack
+  const lower = question.toLowerCase();
+  const blocked = [
+    'cheat',
+    'cheats',
+    'hack',
+    'hacks',
+    'script',
+    'esp',
+    'aimbot',
+    'dupe',
+    'duplication',
+    'dupare'
+  ];
+  if (blocked.some(k => lower.includes(k))) {
+    return (
+      '❌ Non posso aiutarti con cheat, hack o metodi per barare su DayZ.\n' +
+      'Gioca pulito e goditi il server 😉'
+    );
+  }
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: AI_MODEL,
+      temperature: 0.5,
+      max_tokens: 600,
+      messages: [
+        {
+          role: 'system',
+          content: AI_SYSTEM_PROMPT
+        },
+        {
+          role: 'user',
+          content: `User: ${username}\nQuestion: ${question}`
+        }
+      ]
+    });
+
+    const answer =
+      completion.choices?.[0]?.message?.content ||
+      'Mi dispiace, non sono riuscito a generare una risposta.';
+
+    // Discord ha limite 2000 caratteri, ci teniamo larghi
+    return answer.slice(0, 1900);
+  } catch (err) {
+    console.error('❌ Errore chiamata OpenAI:', err);
+    return '❌ Errore durante la richiesta all’AI. Riprova tra poco.';
+  }
+}
+
+// ------------------------------------------------------------
 // AUTO-CLEAN: cancellazione messaggi dopo X secondi
 // ------------------------------------------------------------
 
@@ -429,6 +517,15 @@ const commands = [
   new SlashCommandBuilder()
     .setName('info-sakhal')
     .setDescription('Mostra le info del server DayZ Sakhal'),
+  new SlashCommandBuilder()
+    .setName('ask-ai')
+    .setDescription('Fai una domanda all\'assistente AI del server')
+    .addStringOption(opt =>
+      opt
+        .setName('domanda')
+        .setDescription('Scrivi la tua domanda')
+        .setRequired(true)
+    ),
   new SlashCommandBuilder()
     .setName('setup-structure')
     .setDescription('Crea/organizza categorie e canali ITA/ENG (solo admin)')
@@ -640,6 +737,24 @@ client.on(Events.InteractionCreate, async interaction => {
       .setColor('DarkGold');
 
     await interaction.reply({ embeds: [embedInfo] });
+    return;
+  }
+
+  // ---------------- /ask-ai ----------------
+  if (commandName === 'ask-ai') {
+    const question =
+      interaction.options.getString('domanda');
+
+    await interaction.deferReply();
+
+    const username = interaction.user?.username || 'Unknown';
+
+    const replyText = await getAIResponse(question, username);
+
+    await interaction.editReply({
+      content: replyText
+    });
+
     return;
   }
 
