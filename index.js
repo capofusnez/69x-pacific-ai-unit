@@ -1,6 +1,6 @@
 // ------------------------------------------------------------
 // 69x Pacific AI Unit - Bot Discord per 69x Pacific Land Sakhal
-// Versione per Raspberry Pi con ticket + bot-status
+// Versione per Raspberry Pi con ticket + bot-status + ticket chiusi
 // ------------------------------------------------------------
 
 require('dotenv').config();
@@ -22,7 +22,7 @@ const {
   EmbedBuilder,
   PermissionFlagsBits,
   ChannelType,
-  Events,
+  Events
 } = require('discord.js');
 
 // ------------------------------------------------------------
@@ -47,6 +47,9 @@ const SURVIVOR_ROLE_ID = '1442570651696107711';
 // Nome categoria supporto (usata per i ticket)
 const SUPPORT_CATEGORY_NAME = '🆘 Supporto • Support';
 
+// Nome categoria ticket chiusi
+const CLOSED_TICKETS_CATEGORY_NAME = '🔒 Ticket chiusi • Closed Tickets';
+
 // Info server DayZ Sakhal
 const SERVER_NAME = '69x Pacific Land | Sakhal Full PvP';
 const SERVER_IP = 'IP:PORTA (modifica qui)'; // es: "123.45.67.89:2302"
@@ -70,9 +73,9 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.MessageContent
   ],
-  partials: [Partials.Message, Partials.Channel, Partials.Reaction],
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
 
 // ------------------------------------------------------------
@@ -81,12 +84,12 @@ const client = new Client({
 
 async function getOrCreateCategory(guild, name) {
   let cat = guild.channels.cache.find(
-    (c) => c.type === ChannelType.GuildCategory && c.name === name,
+    c => c.type === ChannelType.GuildCategory && c.name === name
   );
   if (!cat) {
     cat = await guild.channels.create({
-      name,
-      type: ChannelType.GuildCategory,
+      name: name,
+      type: ChannelType.GuildCategory
     });
   }
   return cat;
@@ -94,13 +97,13 @@ async function getOrCreateCategory(guild, name) {
 
 async function getOrCreateTextChannel(guild, name, parentCategory) {
   let ch = guild.channels.cache.find(
-    (c) => c.type === ChannelType.GuildText && c.name === name,
+    c => c.type === ChannelType.GuildText && c.name === name
   );
   if (!ch) {
     ch = await guild.channels.create({
-      name,
+      name: name,
       type: ChannelType.GuildText,
-      parent: parentCategory ? parentCategory.id : null,
+      parent: parentCategory ? parentCategory.id : null
     });
   } else if (parentCategory && ch.parentId !== parentCategory.id) {
     await ch.setParent(parentCategory.id);
@@ -110,13 +113,13 @@ async function getOrCreateTextChannel(guild, name, parentCategory) {
 
 async function getOrCreateVoiceChannel(guild, name, parentCategory) {
   let ch = guild.channels.cache.find(
-    (c) => c.type === ChannelType.GuildVoice && c.name === name,
+    c => c.type === ChannelType.GuildVoice && c.name === name
   );
   if (!ch) {
     ch = await guild.channels.create({
-      name,
+      name: name,
       type: ChannelType.GuildVoice,
-      parent: parentCategory ? parentCategory.id : null,
+      parent: parentCategory ? parentCategory.id : null
     });
   } else if (parentCategory && ch.parentId !== parentCategory.id) {
     await ch.setParent(parentCategory.id);
@@ -135,10 +138,10 @@ function formatDuration(ms) {
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
   const parts = [];
-  if (d > 0) parts.push(`${d}d`);
-  if (h > 0) parts.push(`${h}h`);
-  if (m > 0) parts.push(`${m}m`);
-  parts.push(`${s}s`);
+  if (d > 0) parts.push(d + 'd');
+  if (h > 0) parts.push(h + 'h');
+  if (m > 0) parts.push(m + 'm');
+  parts.push(s + 's');
   return parts.join(' ');
 }
 
@@ -149,10 +152,10 @@ function getSystemUptime() {
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
   const parts = [];
-  if (d > 0) parts.push(`${d}d`);
-  if (h > 0) parts.push(`${h}h`);
-  if (m > 0) parts.push(`${m}m`);
-  parts.push(`${s}s`);
+  if (d > 0) parts.push(d + 'd');
+  if (h > 0) parts.push(h + 'h');
+  if (m > 0) parts.push(m + 'm');
+  parts.push(s + 's');
   return parts.join(' ');
 }
 
@@ -163,12 +166,12 @@ function getMemoryUsage() {
   const usedMB = (used / 1024 / 1024).toFixed(0);
   const totalMB = (total / 1024 / 1024).toFixed(0);
   const perc = ((used / total) * 100).toFixed(1);
-  return `${usedMB}MB / ${totalMB}MB (${perc}%)`;
+  return usedMB + 'MB / ' + totalMB + 'MB (' + perc + '%)';
 }
 
-function execPromise(cmd, cwd = PROJECT_PATH) {
+function execPromise(cmd, cwd) {
   return new Promise((resolve, reject) => {
-    exec(cmd, { cwd }, (error, stdout) => {
+    exec(cmd, { cwd: cwd }, (error, stdout) => {
       if (error) return reject(error);
       resolve(stdout.trim());
     });
@@ -177,9 +180,9 @@ function execPromise(cmd, cwd = PROJECT_PATH) {
 
 async function getGitShortCommit() {
   try {
-    const out = await execPromise('git rev-parse --short HEAD');
+    const out = await execPromise('git rev-parse --short HEAD', PROJECT_PATH);
     return out || 'n/d';
-  } catch {
+  } catch (e) {
     return 'n/d';
   }
 }
@@ -188,9 +191,9 @@ async function getRpiTemperature() {
   try {
     const out = await execPromise('vcgencmd measure_temp', '/');
     const match = out.match(/temp=([0-9.]+)'C/);
-    if (match) return `${match[1]}°C`;
+    if (match) return match[1] + '°C';
     return out || 'n/d';
-  } catch {
+  } catch (e) {
     return 'n/d';
   }
 }
@@ -206,7 +209,7 @@ function getLastAutoUpdate() {
       }
     }
     return 'nessuna voce trovata';
-  } catch {
+  } catch (e) {
     return 'errore lettura log';
   }
 }
@@ -218,39 +221,38 @@ function getLastAutoUpdate() {
 async function createTicketChannel(guild, user) {
   const catSupport = await getOrCreateCategory(guild, SUPPORT_CATEGORY_NAME);
 
-  const baseName = `ticket-${user.username}`
+  const baseName = ('ticket-' + user.username)
     .toLowerCase()
     .replace(/[^a-z0-9\-]/g, '');
   const uniqueId = user.id.slice(-4);
-  const channelName = `${baseName}-${uniqueId}`;
+  const channelName = baseName + '-' + uniqueId;
 
   const channel = await guild.channels.create({
     name: channelName,
     type: ChannelType.GuildText,
     parent: catSupport.id,
-    topic: `Ticket aperto da USERID: ${user.id}`,
+    topic: 'Ticket aperto da USERID: ' + user.id,
     permissionOverwrites: [
       {
         id: guild.roles.everyone.id,
-        deny: [PermissionFlagsBits.ViewChannel],
+        deny: [PermissionFlagsBits.ViewChannel]
       },
       {
         id: user.id,
         allow: [
           PermissionFlagsBits.ViewChannel,
           PermissionFlagsBits.SendMessages,
-          PermissionFlagsBits.ReadMessageHistory,
-        ],
-      },
-      // gli admin con Administrator vedono comunque il canale
-    ],
+          PermissionFlagsBits.ReadMessageHistory
+        ]
+      }
+    ]
   });
 
   const closeRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('ticket_close')
       .setLabel('🔒 Chiudi ticket / Close ticket')
-      .setStyle(ButtonStyle.Danger),
+      .setStyle(ButtonStyle.Danger)
   );
 
   await channel.send({
@@ -263,7 +265,7 @@ async function createTicketChannel(guild, user) {
       '🇬🇧 Write here your issue, question or report.\n' +
       'The more details you give, the easier it is for the staff to help you.\n\n' +
       'Quando hai finito, puoi chiudere il ticket con il pulsante qui sotto.',
-    components: [closeRow],
+    components: [closeRow]
   });
 
   return channel;
@@ -294,17 +296,18 @@ const commands = [
   new SlashCommandBuilder()
     .setName('bot-status')
     .setDescription('Mostra stato bot e Raspberry Pi (solo admin)')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-].map((cmd) => cmd.toJSON());
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
 async function registerCommands() {
   try {
     console.log('🔄 Registrazione comandi slash...');
-    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, SERVER_ID), {
-      body: commands,
-    });
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID, SERVER_ID),
+      { body: commands }
+    );
     console.log('✅ Comandi registrati nel server.');
   } catch (error) {
     console.error('❌ Errore registrazione comandi:', error);
@@ -316,7 +319,7 @@ async function registerCommands() {
 // ------------------------------------------------------------
 
 client.once('ready', () => {
-  console.log(`🤖 Bot online come: ${client.user.tag}`);
+  console.log('🤖 Bot online come: ' + client.user.tag);
   client.user.setActivity('Sopravvivere a Sakhal', { type: 0 });
 });
 
@@ -324,29 +327,25 @@ client.once('ready', () => {
 // EVENTO: NUOVO MEMBRO ENTRA NEL SERVER
 // ------------------------------------------------------------
 
-client.on(Events.GuildMemberAdd, async (member) => {
+client.on(Events.GuildMemberAdd, async member => {
   try {
     const channel = member.guild.channels.cache.get(NEW_USER_CHANNEL_ID);
     if (channel) {
       channel.send(
-        `🎖 <@${member.id}> è entrato nel territorio di **Sakhal**.`,
+        '🎖 <@' + member.id + '> è entrato nel territorio di **Sakhal**.'
       );
     }
 
     await member.send(
-      '👋 Benvenuto su **' +
-        SERVER_NAME +
-        '**\n\n' +
-        'Ricorda:\n' +
-        '- Leggi le regole nel canale regole/rules\n' +
-        '- Accetta per ottenere il ruolo Survivor\n' +
-        '- Poi puoi usare i canali testuali e vocali\n\n' +
-        'Good luck, survivor. 💀',
+      '👋 Benvenuto su **' + SERVER_NAME + '**\n\n' +
+      'Ricorda:\n' +
+      '- Leggi le regole nel canale regole/rules\n' +
+      '- Accetta per ottenere il ruolo Survivor\n' +
+      '- Poi puoi usare i canali testuali e vocali\n\n' +
+      'Good luck, survivor. 💀'
     );
-  } catch {
-    console.log(
-      '⚠ Impossibile mandare DM all\'utente (probabile DM chiusi).',
-    );
+  } catch (e) {
+    console.log('⚠ Impossibile mandare DM all\'utente (probabile DM chiusi).');
   }
 });
 
@@ -354,10 +353,10 @@ client.on(Events.GuildMemberAdd, async (member) => {
 // EVENTO: INTERAZIONI COMANDI SLASH
 // ------------------------------------------------------------
 
-client.on(Events.InteractionCreate, async (interaction) => {
+client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  const { commandName } = interaction;
+  const commandName = interaction.commandName;
 
   // ---------------- /sendrules ----------------
   if (commandName === 'sendrules') {
@@ -415,20 +414,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
       .setDescription(desc)
       .setColor('DarkGreen')
       .setFooter({
-        text: '⚠ Accept/Accetto per entrare ufficialmente nel server',
+        text: '⚠ Accept/Accetto per entrare ufficialmente nel server'
       });
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('accept_rules')
         .setLabel('✔ ACCEPT / ACCETTO')
-        .setStyle(ButtonStyle.Success),
+        .setStyle(ButtonStyle.Success)
     );
 
     await interaction.channel.send({ embeds: [embed], components: [row] });
     await interaction.reply({
       content: '📜 Regole inviate in questo canale.',
-      ephemeral: true,
+      ephemeral: true
     });
     return;
   }
@@ -438,45 +437,30 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const embedInfo = new EmbedBuilder()
       .setTitle('🧭 Info Server – 69x Pacific Land | Sakhal')
       .setDescription(
-        '**Nome server:** `' +
-          SERVER_NAME +
-          '`\n\n' +
-          '> "Sakhal non perdona. O uccidi, o sei loot."',
+        '**Nome server:** `' + SERVER_NAME + '`\n\n' +
+        '> "Sakhal non perdona. O uccidi, o sei loot."'
       )
       .addFields(
         {
           name: '🇮🇹 Info generali',
           value:
             '• **Mappa:** Sakhal\n' +
-            '• **Stile:** ' +
-            SERVER_STYLE +
-            '\n' +
-            '• **Slot:** ' +
-            SERVER_SLOTS +
-            '\n' +
-            '• **Wipe:** ' +
-            SERVER_WIPE +
-            '\n' +
-            '• **Restart:** ' +
-            SERVER_RESTART +
-            '\n' +
-            '• **Discord:** ' +
-            SERVER_DISCORD,
+            '• **Stile:** ' + SERVER_STYLE + '\n' +
+            '• **Slot:** ' + SERVER_SLOTS + '\n' +
+            '• **Wipe:** ' + SERVER_WIPE + '\n' +
+            '• **Restart:** ' + SERVER_RESTART + '\n' +
+            '• **Discord:** ' + SERVER_DISCORD
         },
         {
           name: '🧰 Mod & gameplay',
-          value: SERVER_MODS,
+          value: SERVER_MODS
         },
         {
           name: '🌐 Connessione / Connection',
           value:
-            '**Direct Connect:**\n`' +
-            SERVER_IP +
-            '`\n\n' +
-            'Se non funziona, cerca il nome **' +
-            SERVER_NAME +
-            '** nella lista server DayZ.',
-        },
+            '**Direct Connect:**\n`' + SERVER_IP + '`\n\n' +
+            'Se non funziona, cerca il nome **' + SERVER_NAME + '** nella lista server DayZ.'
+        }
       )
       .setColor('DarkGold');
 
@@ -492,14 +476,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
     ) {
       await interaction.reply({
         content: '❌ Solo un amministratore può usare questo comando.',
-        ephemeral: true,
+        ephemeral: true
       });
       return;
     }
 
     await interaction.reply({
       content: '🛠 Sto creando/organizzando categorie e canali ITA/ENG...',
-      ephemeral: true,
+      ephemeral: true
     });
 
     const guild = interaction.guild;
@@ -509,46 +493,23 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     try {
-      const catWelcome = await getOrCreateCategory(
-        guild,
-        '🧭 Benvenuto • Welcome',
-      );
-      const catCommunity = await getOrCreateCategory(
-        guild,
-        '💬 Community • Community',
-      );
-      const catInGame = await getOrCreateCategory(
-        guild,
-        '🎮 In gioco • In-Game',
-      );
-      const catVoice = await getOrCreateCategory(
-        guild,
-        '🎧 Vocali • Voice Channels',
-      );
+      const catWelcome = await getOrCreateCategory(guild, '🧭 Benvenuto • Welcome');
+      const catCommunity = await getOrCreateCategory(guild, '💬 Community • Community');
+      const catInGame = await getOrCreateCategory(guild, '🎮 In gioco • In-Game');
+      const catVoice = await getOrCreateCategory(guild, '🎧 Vocali • Voice Channels');
       const catSupport = await getOrCreateCategory(guild, SUPPORT_CATEGORY_NAME);
-      const catStaff = await getOrCreateCategory(
-        guild,
-        '🛠 Staff • Staff Only',
-      );
+      const catStaff = await getOrCreateCategory(guild, '🛠 Staff • Staff Only');
 
       // Welcome
-      let rulesChannel = await guild.channels
-        .fetch(RULES_CHANNEL_ID)
-        .catch(() => null);
+      let rulesChannel = await guild.channels.fetch(RULES_CHANNEL_ID).catch(() => null);
       if (rulesChannel) {
         await rulesChannel.setName('📜┃regole・rules');
         await rulesChannel.setParent(catWelcome.id);
       } else {
-        rulesChannel = await getOrCreateTextChannel(
-          guild,
-          '📜┃regole・rules',
-          catWelcome,
-        );
+        rulesChannel = await getOrCreateTextChannel(guild, '📜┃regole・rules', catWelcome);
       }
 
-      let newUserChannel = await guild.channels
-        .fetch(NEW_USER_CHANNEL_ID)
-        .catch(() => null);
+      let newUserChannel = await guild.channels.fetch(NEW_USER_CHANNEL_ID).catch(() => null);
       if (newUserChannel) {
         await newUserChannel.setName('🎖┃nuovi-utenti・new-survivors');
         await newUserChannel.setParent(catWelcome.id);
@@ -556,109 +517,46 @@ client.on(Events.InteractionCreate, async (interaction) => {
         newUserChannel = await getOrCreateTextChannel(
           guild,
           '🎖┃nuovi-utenti・new-survivors',
-          catWelcome,
+          catWelcome
         );
       }
 
-      await getOrCreateTextChannel(
-        guild,
-        '🧭┃info-sakhal・server-info',
-        catWelcome,
-      );
-      await getOrCreateTextChannel(
-        guild,
-        '📣┃annunci・announcements',
-        catWelcome,
-      );
+      await getOrCreateTextChannel(guild, '🧭┃info-sakhal・server-info', catWelcome);
+      await getOrCreateTextChannel(guild, '📣┃annunci・announcements', catWelcome);
 
       // Community
-      await getOrCreateTextChannel(
-        guild,
-        '😎┃generale・general-chat',
-        catCommunity,
-      );
-      await getOrCreateTextChannel(
-        guild,
-        '📸┃screen・screenshots',
-        catCommunity,
-      );
-      await getOrCreateTextChannel(
-        guild,
-        '🎯┃storie-raid・raid-stories',
-        catCommunity,
-      );
-      await getOrCreateTextChannel(
-        guild,
-        '🌐┃international・english-chat',
-        catCommunity,
-      );
+      await getOrCreateTextChannel(guild, '😎┃generale・general-chat', catCommunity);
+      await getOrCreateTextChannel(guild, '📸┃screen・screenshots', catCommunity);
+      await getOrCreateTextChannel(guild, '🎯┃storie-raid・raid-stories', catCommunity);
+      await getOrCreateTextChannel(guild, '🌐┃international・english-chat', catCommunity);
 
       // In-game
-      await getOrCreateTextChannel(
-        guild,
-        '📢┃looking-for-team・lfg',
-        catInGame,
-      );
-      await getOrCreateTextChannel(
-        guild,
-        '💰┃commercio・trade',
-        catInGame,
-      );
-      await getOrCreateTextChannel(
-        guild,
-        '🎯┃raid-planning・raid-plans',
-        catInGame,
-      );
+      await getOrCreateTextChannel(guild, '📢┃looking-for-team・lfg', catInGame);
+      await getOrCreateTextChannel(guild, '💰┃commercio・trade', catInGame);
+      await getOrCreateTextChannel(guild, '🎯┃raid-planning・raid-plans', catInGame);
 
       // Voice
-      await getOrCreateVoiceChannel(
-        guild,
-        '🎧┃vocale-1・voice-1',
-        catVoice,
-      );
-      await getOrCreateVoiceChannel(
-        guild,
-        '🎧┃vocale-2・voice-2',
-        catVoice,
-      );
-      await getOrCreateVoiceChannel(
-        guild,
-        '🎤┃raid-squad・raid-squad',
-        catVoice,
-      );
+      await getOrCreateVoiceChannel(guild, '🎧┃vocale-1・voice-1', catVoice);
+      await getOrCreateVoiceChannel(guild, '🎧┃vocale-2・voice-2', catVoice);
+      await getOrCreateVoiceChannel(guild, '🎤┃raid-squad・raid-squad', catVoice);
 
-      // Supporto
-      await getOrCreateTextChannel(
-        guild,
-        '🎫┃ticket-supporto・tickets',
-        catSupport,
-      );
-      await getOrCreateTextChannel(
-        guild,
-        '🐞┃bug-report・bug-report',
-        catSupport,
-      );
-      await getOrCreateTextChannel(
-        guild,
-        '💡┃suggerimenti・suggestions',
-        catSupport,
-      );
+      // Support
+      await getOrCreateTextChannel(guild, '🎫┃ticket-supporto・tickets', catSupport);
+      await getOrCreateTextChannel(guild, '🐞┃bug-report・bug-report', catSupport);
+      await getOrCreateTextChannel(guild, '💡┃suggerimenti・suggestions', catSupport);
 
       // Staff
       await getOrCreateTextChannel(guild, '🚫┃admin-log', catStaff);
       await getOrCreateTextChannel(guild, '🛠┃staff-chat', catStaff);
       await getOrCreateTextChannel(guild, '📋┃ban-log', catStaff);
 
-      await interaction.editReply(
-        '✅ Struttura categorie/canali ITA/ENG creata/aggiornata.',
-      );
+      await interaction.editReply('✅ Struttura categorie/canali ITA/ENG creata/aggiornata.');
     } catch (err) {
       console.error('❌ Errore setup-structure:', err);
       await interaction.editReply(
-        '❌ Si è verificato un errore durante la creazione della struttura.',
+        '❌ Si è verificato un errore durante la creazione della struttura.'
       );
     }
-
     return;
   }
 
@@ -668,7 +566,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (!guild) {
       await interaction.reply({
         content: '❌ Errore: guild non trovata.',
-        ephemeral: true,
+        ephemeral: true
       });
       return;
     }
@@ -676,10 +574,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const ticketChannel = await createTicketChannel(guild, interaction.user);
 
     await interaction.reply({
-      content: `✅ Ticket creato: ${ticketChannel}`,
-      ephemeral: true,
+      content: '✅ Ticket creato: ' + ticketChannel.toString(),
+      ephemeral: true
     });
-
     return;
   }
 
@@ -691,7 +588,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     ) {
       await interaction.reply({
         content: '❌ Solo un amministratore può usare questo comando.',
-        ephemeral: true,
+        ephemeral: true
       });
       return;
     }
@@ -700,9 +597,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       .setTitle('🎫 Supporto • Support Tickets')
       .setDescription(
         '🇮🇹 Hai bisogno di aiuto, vuoi segnalare un problema o fare una richiesta allo staff?\n\n' +
-          'Premi il pulsante qui sotto per aprire un ticket dedicato, visibile solo a te e allo staff.\n\n' +
-          '🇬🇧 Need help, want to report an issue or contact staff?\n\n' +
-          'Press the button below to open a private ticket, visible only to you and the staff.',
+        'Premi il pulsante qui sotto per aprire un ticket dedicato, visibile solo a te e allo staff.\n\n' +
+        '🇬🇧 Need help, want to report an issue or contact staff?\n\n' +
+        'Press the button below to open a private ticket, visible only to you and the staff.'
       )
       .setColor('Purple');
 
@@ -710,15 +607,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
       new ButtonBuilder()
         .setCustomId('ticket_open')
         .setLabel('🎫 Apri ticket / Open ticket')
-        .setStyle(ButtonStyle.Primary),
+        .setStyle(ButtonStyle.Primary)
     );
 
     await interaction.channel.send({ embeds: [embed], components: [row] });
     await interaction.reply({
       content: '✅ Pannello ticket inviato in questo canale.',
-      ephemeral: true,
+      ephemeral: true
     });
-
     return;
   }
 
@@ -730,7 +626,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     ) {
       await interaction.reply({
         content: '❌ Solo un amministratore può usare questo comando.',
-        ephemeral: true,
+        ephemeral: true
       });
       return;
     }
@@ -756,48 +652,29 @@ client.on(Events.InteractionCreate, async (interaction) => {
           {
             name: '🤖 Bot',
             value:
-              '• **Nome:** ' +
-              client.user.tag +
-              '\n' +
-              '• **Ping Discord:** `' +
-              ping +
-              ' ms`\n' +
-              '• **Uptime bot:** `' +
-              botUptime +
-              '`\n' +
-              '• **Server Discord:** ' +
-              (guild ? guild.name : 'n/d'),
+              '• **Nome:** ' + client.user.tag + '\n' +
+              '• **Ping Discord:** `' + ping + ' ms`\n' +
+              '• **Uptime bot:** `' + botUptime + '`\n' +
+              '• **Server Discord:** ' + (guild ? guild.name : 'n/d')
           },
           {
             name: '📦 Codice',
             value:
-              '• **Commit attuale:** `' +
-              commit +
-              '`\n' +
-              '• **Ultimo auto-update:** `' +
-              lastUpdate +
-              '`',
+              '• **Commit attuale:** `' + commit + '`\n' +
+              '• **Ultimo auto-update:** `' + lastUpdate + '`'
           },
           {
             name: '🧠 Raspberry Pi',
             value:
-              '• **Hostname:** `' +
-              os.hostname() +
-              '`\n' +
-              '• **Uptime sistema:** `' +
-              sysUptime +
-              '`',
+              '• **Hostname:** `' + os.hostname() + '`\n' +
+              '• **Uptime sistema:** `' + sysUptime + '`'
           },
           {
             name: '🔥 Risorse',
             value:
-              '• **RAM:** ' +
-              memUsage +
-              '\n' +
-              '• **Temperatura CPU:** `' +
-              temp +
-              '`',
-          },
+              '• **RAM:** ' + memUsage + '\n' +
+              '• **Temperatura CPU:** `' + temp + '`'
+          }
         )
         .setTimestamp();
 
@@ -805,11 +682,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     } catch (err) {
       console.error('❌ Errore /bot-status:', err);
       await interaction.editReply({
-        content:
-          '⚠ Errore nel recuperare lo stato. Controlla i log del Raspberry.',
+        content: '⚠ Errore nel recuperare lo stato. Controlla i log del Raspberry.'
       });
     }
-
     return;
   }
 });
@@ -818,7 +693,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 // EVENTO: INTERAZIONI BOTTONI (REGOLE + TICKET)
 // ------------------------------------------------------------
 
-client.on(Events.InteractionCreate, async (interaction) => {
+client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isButton()) return;
 
   const customId = interaction.customId;
@@ -830,9 +705,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       if (!SURVIVOR_ROLE_ID) {
         await interaction.reply({
-          content:
-            '❌ Errore di configurazione: ruolo Survivor non impostato nel bot.',
-          ephemeral: true,
+          content: '❌ Errore di configurazione: ruolo Survivor non impostato nel bot.',
+          ephemeral: true
         });
         return;
       }
@@ -840,18 +714,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const role = interaction.guild.roles.cache.get(SURVIVOR_ROLE_ID);
       if (!role) {
         await interaction.reply({
-          content:
-            '❌ Non trovo il ruolo Survivor sul server. Avvisa un admin.',
-          ephemeral: true,
+          content: '❌ Non trovo il ruolo Survivor sul server. Avvisa un admin.',
+          ephemeral: true
         });
         return;
       }
 
       if (member.roles.cache.has(SURVIVOR_ROLE_ID)) {
         await interaction.reply({
-          content:
-            '✅ Hai già accettato le regole ed hai già il ruolo Survivor.',
-          ephemeral: true,
+          content: '✅ Hai già accettato le regole ed hai già il ruolo Survivor.',
+          ephemeral: true
         });
         return;
       }
@@ -860,73 +732,49 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       await interaction.update({
         content: '✔ Hai accettato le regole. Benvenuto sopravvissuto.',
-        components: [],
+        components: []
       });
 
       try {
         await member.send(
           '👋 Benvenuto sopravvissuto.\n\n' +
-            'Ora fai parte di **' +
-            SERVER_NAME +
-            '**.\n\n' +
-            '🔥 Consigli:\n' +
-            '- Non fidarti di nessuno\n' +
-            '- Loota tutto\n' +
-            '- Spara per primo\n' +
-            '- Sopravvivi finché puoi\n\n' +
-            'Good luck… you’ll need it. 💀\n\n' +
-            '────────────────────────\n' +
-            '🇮🇹 **Info server**\n\n' +
-            '• Nome: ' +
-            SERVER_NAME +
-            '\n' +
-            '• Mappa: Sakhal\n' +
-            '• Stile: ' +
-            SERVER_STYLE +
-            '\n' +
-            '• Slot: ' +
-            SERVER_SLOTS +
-            '\n' +
-            '• Wipe: ' +
-            SERVER_WIPE +
-            '\n' +
-            '• Restart: ' +
-            SERVER_RESTART +
-            '\n\n' +
-            '🔌 Direct Connect (se disponibile):\n' +
-            SERVER_IP +
-            '\n\n' +
-            '────────────────────────\n' +
-            '🇬🇧 **Server info**\n\n' +
-            '• Name: ' +
-            SERVER_NAME +
-            '\n' +
-            '• Map: Sakhal\n' +
-            '• Style: ' +
-            SERVER_STYLE +
-            '\n' +
-            '• Slots: ' +
-            SERVER_SLOTS +
-            '\n' +
-            '• Wipe: ' +
-            SERVER_WIPE +
-            '\n' +
-            '• Restart: ' +
-            SERVER_RESTART +
-            '\n\n' +
-            '🔌 Direct Connect:\n' +
-            SERVER_IP,
+          'Ora fai parte di **' + SERVER_NAME + '**.\n\n' +
+          '🔥 Consigli:\n' +
+          '- Non fidarti di nessuno\n' +
+          '- Loota tutto\n' +
+          '- Spara per primo\n' +
+          '- Sopravvivi finché puoi\n\n' +
+          'Good luck… you’ll need it. 💀\n\n' +
+          '────────────────────────\n' +
+          '🇮🇹 **Info server**\n\n' +
+          '• Nome: ' + SERVER_NAME + '\n' +
+          '• Mappa: Sakhal\n' +
+          '• Stile: ' + SERVER_STYLE + '\n' +
+          '• Slot: ' + SERVER_SLOTS + '\n' +
+          '• Wipe: ' + SERVER_WIPE + '\n' +
+          '• Restart: ' + SERVER_RESTART + '\n\n' +
+          '🔌 Direct Connect (se disponibile):\n' +
+          SERVER_IP + '\n\n' +
+          '────────────────────────\n' +
+          '🇬🇧 **Server info**\n\n' +
+          '• Name: ' + SERVER_NAME + '\n' +
+          '• Map: Sakhal\n' +
+          '• Style: ' + SERVER_STYLE + '\n' +
+          '• Slots: ' + SERVER_SLOTS + '\n' +
+          '• Wipe: ' + SERVER_WIPE + '\n' +
+          '• Restart: ' + SERVER_RESTART + '\n\n' +
+          '🔌 Direct Connect:\n' +
+          SERVER_IP
         );
-      } catch {
+      } catch (e) {
         console.log('⚠ DM non consegnato (utente con DM chiusi).');
       }
     } catch (err) {
       console.error('❌ Errore nel bottone accept_rules:', err);
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({
-          content:
-            "⚠ Errore interno durante l'accettazione delle regole. Avvisa lo staff.",
-          ephemeral: true,
+          content: '⚠ Errore interno durante l\'accettazione delle regole. Avvisa lo staff.',
+          ephemeral: true
         });
       }
     }
@@ -940,7 +788,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       if (!guild) {
         await interaction.reply({
           content: '❌ Errore: guild non trovata.',
-          ephemeral: true,
+          ephemeral: true
         });
         return;
       }
@@ -948,15 +796,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const ticketChannel = await createTicketChannel(guild, interaction.user);
 
       await interaction.reply({
-        content: `✅ Ticket creato: ${ticketChannel}`,
-        ephemeral: true,
+        content: '✅ Ticket creato: ' + ticketChannel.toString(),
+        ephemeral: true
       });
     } catch (err) {
       console.error('❌ Errore bottone ticket_open:', err);
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({
           content: '⚠ Errore nella creazione del ticket. Avvisa lo staff.',
-          ephemeral: true,
+          ephemeral: true
         });
       }
     }
@@ -968,22 +816,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
     try {
       const channel = interaction.channel;
       const member = interaction.member;
+      const guild = interaction.guild;
 
       if (
         channel.type !== ChannelType.GuildText ||
         !channel.name.startsWith('ticket-')
       ) {
         await interaction.reply({
-          content:
-            '❌ Questo bottone può essere usato solo nei canali ticket.',
-          ephemeral: true,
+          content: '❌ Questo bottone può essere usato solo nei canali ticket.',
+          ephemeral: true
         });
         return;
       }
 
-      const isAdmin = member.permissions.has(
-        PermissionFlagsBits.Administrator,
-      );
+      const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
 
       let ownerId = null;
       if (channel.topic) {
@@ -995,20 +841,38 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       if (!isAdmin && !isOwner) {
         await interaction.reply({
-          content:
-            '❌ Solo il proprietario del ticket o un membro dello staff può chiuderlo.',
-          ephemeral: true,
+          content: '❌ Solo il proprietario del ticket o un membro dello staff può chiuderlo.',
+          ephemeral: true
         });
         return;
       }
 
-      await channel.send(
-        `🔒 Ticket chiuso da <@${interaction.user.id}>. Il canale verrà eliminato tra pochi secondi...`,
+      const closedCategory = await getOrCreateCategory(
+        guild,
+        CLOSED_TICKETS_CATEGORY_NAME
       );
 
-      setTimeout(() => {
-        channel.delete().catch(console.error);
-      }, 5000);
+      await channel.send(
+        '🔒 Ticket chiuso da <@' + interaction.user.id + '>.\n' +
+        '📁 Questo ticket è stato archiviato in **' + CLOSED_TICKETS_CATEGORY_NAME + '**.\n' +
+        'Solo lo staff può ancora vederlo.'
+      );
+
+      let newName = channel.name;
+      if (newName.startsWith('ticket-')) {
+        newName = newName.replace('ticket-', 'closed-');
+      }
+
+      await channel.setParent(closedCategory.id);
+      await channel.setName(newName);
+
+      await channel.permissionOverwrites.set([
+        {
+          id: guild.roles.everyone.id,
+          deny: [PermissionFlagsBits.ViewChannel]
+        }
+        // gli admin con Administrator vedono comunque tutto
+      ]);
 
       if (!interaction.replied && !interaction.deferred) {
         await interaction.deferUpdate().catch(() => {});
@@ -1017,9 +881,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
       console.error('❌ Errore bottone ticket_close:', err);
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({
-          content:
-            '⚠ Errore durante la chiusura del ticket. Avvisa lo staff.',
-          ephemeral: true,
+          content: '⚠ Errore durante la chiusura del ticket. Avvisa lo staff.',
+          ephemeral: true
         });
       }
     }
@@ -1031,11 +894,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
 // GESTIONE ERRORI GLOBALI
 // ------------------------------------------------------------
 
-process.on('unhandledRejection', (reason) => {
+process.on('unhandledRejection', reason => {
   console.error('🚨 UNHANDLED REJECTION:', reason);
 });
 
-process.on('uncaughtException', (err) => {
+process.on('uncaughtException', err => {
   console.error('🚨 UNCAUGHT EXCEPTION:', err);
 });
 
