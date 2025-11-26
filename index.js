@@ -8,6 +8,7 @@
 // - /bot-status con info Raspberry
 // - Auto-clean messaggi + /clean-channel
 // - /ask-ai: assistente AI per il server (OpenAI)
+// - /ai-toggle: abilita/disabilita AI (solo admin, persistente)
 // ------------------------------------------------------------
 
 require('dotenv').config();
@@ -15,6 +16,34 @@ require('dotenv').config();
 const os = require('os');
 const { exec } = require('child_process');
 const fs = require('fs');
+
+// --- CONFIG JSON (stato AI persistente) ---
+let config = { ai_enabled: false };
+const CONFIG_PATH = './config.json';
+
+try {
+  if (fs.existsSync(CONFIG_PATH)) {
+    const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
+    config = JSON.parse(raw);
+    if (typeof config.ai_enabled !== 'boolean') {
+      config.ai_enabled = false;
+    }
+  } else {
+    // se non esiste, lo creo con default
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+  }
+} catch (e) {
+  console.error('⚠ Errore lettura/scrittura config.json, uso default:', e);
+  config = { ai_enabled: false };
+}
+
+function saveConfig() {
+  try {
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+  } catch (e) {
+    console.error('⚠ Errore salvataggio config.json:', e);
+  }
+}
 
 // --- OpenAI (AI assistant) ---
 const OpenAI = require('openai');
@@ -264,7 +293,7 @@ function getLastAutoUpdate() {
 }
 
 // ------------------------------------------------------------
-// HELPER: chiamata all’AI OpenAI
+// HELPER: chiamata all’AI OpenAI (con toggle)
 // ------------------------------------------------------------
 
 /**
@@ -274,9 +303,20 @@ function getLastAutoUpdate() {
  * @returns {Promise<string>} - Testo della risposta.
  */
 async function getAIResponse(question, username) {
+  // AI disabilitata da comando admin
+  if (!config.ai_enabled) {
+    return (
+      "⚠ L'AI del server è attualmente **DISATTIVATA**.\n" +
+      "Un amministratore può attivarla con il comando `/ai-toggle`."
+    );
+  }
+
   // Se manca la chiave, avvisa
   if (!process.env.OPENAI_API_KEY) {
-    return '⚠️ L’AI non è configurata (manca OPENAI_API_KEY). Avvisa un admin.';
+    return (
+      '⚠ L’AI non è configurata (manca OPENAI_API_KEY nel bot).\n' +
+      'Un admin deve sistemare il file `.env`.'
+    );
   }
 
   // Blocco richieste legate a cheat/hack
@@ -325,6 +365,14 @@ async function getAIResponse(question, username) {
     return answer.slice(0, 1900);
   } catch (err) {
     console.error('❌ Errore chiamata OpenAI:', err);
+
+    if (err.code === 'insufficient_quota' || err.status === 429) {
+      return (
+        '⚠ L’AI del server è temporaneamente non disponibile (quota API esaurita o limite raggiunto).\n' +
+        'Un admin deve controllare la fatturazione su OpenAI.'
+      );
+    }
+
     return '❌ Errore durante la richiesta all’AI. Riprova tra poco.';
   }
 }
@@ -526,6 +574,10 @@ const commands = [
         .setDescription('Scrivi la tua domanda')
         .setRequired(true)
     ),
+  new SlashCommandBuilder()
+    .setName('ai-toggle')
+    .setDescription('Attiva o disattiva la modalità AI (solo admin)')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
     .setName('setup-structure')
     .setDescription('Crea/organizza categorie e canali ITA/ENG (solo admin)')
@@ -755,6 +807,33 @@ client.on(Events.InteractionCreate, async interaction => {
       content: replyText
     });
 
+    return;
+  }
+
+  // ---------------- /ai-toggle ----------------
+  if (commandName === 'ai-toggle') {
+    if (
+      !interaction.memberPermissions ||
+      !interaction.memberPermissions.has(PermissionFlagsBits.Administrator)
+    ) {
+      await interaction.reply({
+        content: '🚫 Non hai i permessi per usare questo comando.',
+        ephemeral: true
+      });
+      return;
+    }
+
+    config.ai_enabled = !config.ai_enabled;
+    saveConfig();
+
+    const stato = config.ai_enabled
+      ? '✅ **AI ATTIVATA** – /ask-ai ora utilizza OpenAI.'
+      : '⛔ **AI DISATTIVATA** – /ask-ai non chiamerà più OpenAI.';
+
+    await interaction.reply({
+      content: stato,
+      ephemeral: true
+    });
     return;
   }
 
