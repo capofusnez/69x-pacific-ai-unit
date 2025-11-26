@@ -1,12 +1,12 @@
 // ------------------------------------------------------------
 // 69x Pacific AI Unit - Bot Discord per 69x Pacific Land Sakhal
-// Versione per Raspberry Pi con:
 // - Regole + Accept
 // - Info Sakhal
 // - Setup struttura canali ITA/ENG
 // - Ticket con categorie + chiusura + archivio
 // - Notifica staff per ogni nuovo ticket
 // - /bot-status con info Raspberry
+// - Auto-clean messaggi + /clean-channel
 // ------------------------------------------------------------
 
 require('dotenv').config();
@@ -69,6 +69,13 @@ const SERVER_STYLE = 'Hardcore survival, full PvP, niente favoritismi staff';
 // Percorsi usati per lo status
 const PROJECT_PATH = '/home/andrea/69x-pacific-ai-unit';
 const AUTOUPDATE_LOG = '/home/andrea/pacificbot-autoupdate.log';
+
+// Canali dove fare auto-clean dei messaggi "comando"
+const AUTOCLEAN_CHANNELS = [
+  '😎┃generale・general-chat',
+  '📢┃looking-for-team・lfg'
+  // aggiungi altri nomi se vuoi
+];
 
 // ------------------------------------------------------------
 // CREAZIONE CLIENT DISCORD
@@ -217,6 +224,25 @@ function getLastAutoUpdate() {
     return 'nessuna voce trovata';
   } catch (e) {
     return 'errore lettura log';
+  }
+}
+
+// ------------------------------------------------------------
+// AUTO-CLEAN: cancellazione messaggi dopo X secondi
+// ------------------------------------------------------------
+
+async function autoDeleteMessage(message, seconds) {
+  try {
+    if (!message || !message.deletable) return;
+    setTimeout(async () => {
+      try {
+        await message.delete().catch(() => {});
+      } catch (e) {
+        // ignore
+      }
+    }, seconds * 1000);
+  } catch (e) {
+    console.error('Errore autoDeleteMessage:', e);
   }
 }
 
@@ -403,6 +429,17 @@ const commands = [
   new SlashCommandBuilder()
     .setName('bot-status')
     .setDescription('Mostra stato bot e Raspberry Pi (solo admin)')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder()
+    .setName('clean-channel')
+    .setDescription('Pulisce messaggi vecchi nel canale corrente (solo admin)')
+    .addIntegerOption(opt =>
+      opt
+        .setName('days')
+        .setDescription('Cancella messaggi più vecchi di X giorni (default 7, max 14)')
+        .setMinValue(1)
+        .setMaxValue(14)
+    )
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
 ].map(cmd => cmd.toJSON());
 
@@ -820,6 +857,84 @@ client.on(Events.InteractionCreate, async interaction => {
     }
     return;
   }
+
+  // ---------------- /clean-channel ----------------
+  if (commandName === 'clean-channel') {
+    if (
+      !interaction.memberPermissions ||
+      !interaction.memberPermissions.has(PermissionFlagsBits.Administrator)
+    ) {
+      await interaction.reply({
+        content: '❌ Solo un amministratore può usare questo comando.',
+        ephemeral: true
+      });
+      return;
+    }
+
+    const channel = interaction.channel;
+    if (!channel || channel.type !== ChannelType.GuildText) {
+      await interaction.reply({
+        content: '❌ Questo comando va usato in un canale testuale del server.',
+        ephemeral: true
+      });
+      return;
+    }
+
+    const days = interaction.options.getInteger('days') ?? 7;
+    const now = Date.now();
+    const cutoff = now - days * 24 * 60 * 60 * 1000;
+    const fourteenDaysAgo = now - 14 * 24 * 60 * 60 * 1000;
+
+    await interaction.reply({
+      content: `🧹 Avvio pulizia in <#${channel.id}> per messaggi più vecchi di **${days} giorni** (limitata agli ultimi 14 giorni, vincolo Discord)...`,
+      ephemeral: true
+    });
+
+    let deletedCount = 0;
+    let lastId = null;
+    let fetched;
+
+    try {
+      do {
+        fetched = await channel.messages.fetch({
+          limit: 100,
+          before: lastId ?? undefined
+        });
+
+        if (fetched.size === 0) break;
+
+        const messagesToDelete = fetched.filter(msg => {
+          if (msg.pinned) return false;
+          if (msg.createdTimestamp < fourteenDaysAgo) return false; // troppo vecchi per l'API
+          return msg.createdTimestamp < cutoff;
+        });
+
+        for (const msg of messagesToDelete.values()) {
+          try {
+            await msg.delete();
+            deletedCount++;
+          } catch {
+            // ignora singoli errori
+          }
+        }
+
+        lastId = fetched.last()?.id ?? null;
+      } while (fetched.size === 100);
+
+      await interaction.followUp({
+        content: `✅ Pulizia completata in <#${channel.id}>.\nMessaggi eliminati: **${deletedCount}**.\n(Discord non permette di cancellare automaticamente messaggi più vecchi di 14 giorni.)`,
+        ephemeral: true
+      });
+    } catch (err) {
+      console.error('❌ Errore /clean-channel:', err);
+      await interaction.followUp({
+        content: '⚠ Errore durante la pulizia del canale. Controlla i log del bot.',
+        ephemeral: true
+      });
+    }
+
+    return;
+  }
 });
 
 // ------------------------------------------------------------
@@ -1034,6 +1149,34 @@ client.on(Events.InteractionCreate, async interaction => {
       }
     }
     return;
+  }
+});
+
+// ------------------------------------------------------------
+// AUTO-CLEAN: intercetta i messaggi e pulisce quelli "comando"
+// ------------------------------------------------------------
+
+client.on(Events.MessageCreate, async message => {
+  try {
+    if (!message.guild || message.author.bot) return;
+
+    const channelName = message.channel.name;
+    if (!AUTOCLEAN_CHANNELS.includes(channelName)) return;
+
+    const content = message.content.trim();
+
+    const isMaybeCommand =
+      content.startsWith('!') ||
+      content.startsWith('?') ||
+      content.startsWith('/') ||
+      content.length < 3; // messaggi "ok", "si", ecc. (togli se non ti piace)
+
+    if (!isMaybeCommand) return;
+
+    // Cancella dopo 20 secondi
+    await autoDeleteMessage(message, 20);
+  } catch (e) {
+    console.error('Errore in auto-clean message:', e);
   }
 });
 
