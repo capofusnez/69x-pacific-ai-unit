@@ -1,6 +1,12 @@
 // ------------------------------------------------------------
 // 69x Pacific AI Unit - Bot Discord per 69x Pacific Land Sakhal
-// Versione per Raspberry Pi con ticket + bot-status + ticket chiusi + categorie ticket
+// Versione per Raspberry Pi con:
+// - Regole + Accept
+// - Info Sakhal
+// - Setup struttura canali ITA/ENG
+// - Ticket con categorie + chiusura + archivio
+// - Notifica staff per ogni nuovo ticket
+// - /bot-status con info Raspberry
 // ------------------------------------------------------------
 
 require('dotenv').config();
@@ -250,6 +256,36 @@ function getTicketTypeConfig(ticketType) {
   return TICKET_TYPES[ticketType] || TICKET_TYPES.support;
 }
 
+// 🔔 Notifica staff quando si apre un ticket
+async function notifyStaffNewTicket(guild, channel, user, ticketType) {
+  try {
+    let staffChannel =
+      guild.channels.cache.find(
+        c =>
+          c.type === ChannelType.GuildText &&
+          c.name === '🛠┃staff-chat'
+      ) ||
+      guild.channels.cache.find(
+        c =>
+          c.type === ChannelType.GuildText &&
+          c.name === '🚫┃admin-log'
+      );
+
+    if (!staffChannel) return;
+
+    const typeCfg = getTicketTypeConfig(ticketType);
+
+    await staffChannel.send(
+      '🔔 **Nuovo ticket aperto**\n' +
+        '• **Tipo:** ' + typeCfg.labelIt + ' (`' + ticketType + '`)\n' +
+        '• **Utente:** <@' + user.id + '>\n' +
+        '• **Canale:** ' + channel.toString()
+    );
+  } catch (e) {
+    console.error('⚠ Errore invio notifica staff:', e);
+  }
+}
+
 async function createTicketChannel(guild, user, ticketType) {
   const typeCfg = getTicketTypeConfig(ticketType);
   const catSupport = await getOrCreateCategory(guild, SUPPORT_CATEGORY_NAME);
@@ -336,6 +372,8 @@ async function createTicketChannel(guild, user, ticketType) {
       'Quando hai finito, puoi chiudere il ticket con il pulsante qui sotto.',
     components: [closeRow]
   });
+
+  await notifyStaffNewTicket(guild, channel, user, ticketType);
 
   return channel;
 }
@@ -833,7 +871,7 @@ client.on(Events.InteractionCreate, async interaction => {
       try {
         await member.send(
           '👋 Benvenuto sopravvissuto.\n\n' +
-          'Ora fai parte di **' + SERVER_NAME + '**.\n\n' +
+          'Ora fai parte di **' + SERVER_NAME + '**\n\n' +
           '🔥 Consigli:\n' +
           '- Non fidarti di nessuno\n' +
           '- Loota tutto\n' +
@@ -970,7 +1008,6 @@ client.on(Events.InteractionCreate, async interaction => {
       );
 
       let newName = channel.name;
-      // ticket-support-... -> closed-support-...
       newName = newName.replace(/^ticket-/, 'closed-');
 
       await channel.setParent(closedCategory.id);
