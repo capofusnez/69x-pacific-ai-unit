@@ -1246,7 +1246,7 @@ client.on("messageCreate", async message => {
     if (!isTicket && !isAI && member) {
         if (isPlayingDayZ(member)) {
             const res = addXP(guildId, userId, 0);
-            const beforeLevel = getLevelInfo(res.xp 0).level;
+            const beforeLevel = getLevelInfo(res.xp -0).level;
             if (res.newLevel > beforeLevel) {
                 try {
                     const guildMember = await message.guild.members.fetch(userId);
