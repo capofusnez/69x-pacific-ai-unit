@@ -135,12 +135,12 @@ function getDefaultServerConfig() {
         name: "69x Pacific Land | Sakhal Full PvP",
         ip: "0.0.0.0",
         port: "2302",
-        slots: 60,
+        slots: 24,
         wipe: "Ogni 30 giorni",
-        restart: "Ogni 4 ore",
+        restart: "Ogni 2 ore",
         mods: "Trader, Custom Loot, Vehicles",
-        style: "Full PvP - Hardcore",
-        discord: "Ufficiale"
+        style: "Full PvP - ",
+        discord: "69x Pacific Land full PvP"
     };
 }
 
@@ -1309,7 +1309,7 @@ client.on("messageCreate", async message => {
 // READY
 // ------------------------------------------------------------
 
-client.once("ready", async () => {
+client.once("clientReady", async () => {
     console.log(`✅ Loggato come ${client.user.tag}`);
     client.user.setPresence({
         activities: [{ name: "69x Pacific Land | FULL PvP", type: ActivityType.Playing }],
