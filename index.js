@@ -1197,20 +1197,20 @@ if (interaction.isButton()) {
 
         if (hasHigherRank) {
             return interaction.reply({
-                content: 
+                content:
                     "🛡 Hai già un rango più alto — non serve premere di nuovo.\n\n" +
                     "🛡 You already have a higher rank — no need to press again.",
-                flags: 64 // sostituisce ephemeral
+                ephemeral: true
             });
         }
 
         // Se l’utente ha già Fresh Spawn → non fare nulla
         if (userRoles.includes(freshRole)) {
             return interaction.reply({
-                content: 
+                content:
                     "✔ Hai già accettato le regole.\n" +
                     "✔ You already accepted the rules.",
-                flags: 64
+                ephemeral: true
             });
         }
 
@@ -1219,24 +1219,22 @@ if (interaction.isButton()) {
             await member.roles.add(freshRole, "Ha accettato le regole");
         } catch (err) {
             return interaction.reply({
-                content: 
+                content:
                     "⚠ Errore durante l'assegnazione del ruolo. Avvisa lo staff.\n" +
                     "⚠ Error assigning role. Contact staff.",
-                flags: 64
+                ephemeral: true
             });
         }
 
         // Messaggio finale di conferma
         return interaction.reply({
-            content: 
+            content:
                 "🔥 Benvenuto sopravvissuto — ora sei un **Fresh Spawn**.\n" +
-                "Ricorda: nessuno verrà a salvarti.\n" +
-                "🔥 Welcome survivor — you are now a **Fresh Spawn**.\n\n" +
+                "Ricorda: nessuno verrà a salvarti.\n\n" +
+                "🔥 Welcome survivor — you are now a **Fresh Spawn**.\n" +
                 "Remember: no one is coming to save you.",
-            flags: 64
+            ephemeral: true
         });
-    }
-}
 
 
         // XP – Mostra i miei XP
