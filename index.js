@@ -1,4 +1,4 @@
-// V 1.6 beta - 69x Pacific AI Unit
+// V 1.7 beta - 69x Pacific AI Unit
 // Bot Discord per 69x Pacific Land | Sakhal
 
 require("dotenv").config();
@@ -111,8 +111,46 @@ const AI_SESSIONS_FILE = path.join(__dirname, "ai_sessions.json");
 const PERMISSIONS_FILE = path.join(__dirname, "permissions.json");
 const RULES_MESSAGE_FILE = path.join(__dirname, "rules_message.json");
 
+// 🔹 Nuovo file per configurazione chat (messaggi corti)
+const CHAT_CONFIG_FILE = path.join(__dirname, "chatconfig.json");
+
 const AI_SESSION_TIMEOUT_MINUTES = 30;
 const AI_SESSION_TIMEOUT_MS = AI_SESSION_TIMEOUT_MINUTES * 60 * 1000;
+
+// ------------------------------------------------------------
+// CONFIG CHAT (chatconfig.json) – lunghezza minima messaggi
+// ------------------------------------------------------------
+
+let chatConfig = {
+    shortMinLength: 5 // default, modificabile da comando
+};
+
+function loadChatConfig() {
+    try {
+        if (fs.existsSync(CHAT_CONFIG_FILE)) {
+            const raw = fs.readFileSync(CHAT_CONFIG_FILE, "utf8");
+            chatConfig = JSON.parse(raw);
+        } else {
+            saveChatConfig();
+        }
+        console.log("💬 Config chat caricata:", chatConfig);
+    } catch (err) {
+        console.error("⚠ Errore caricando chatconfig.json:", err);
+        chatConfig = { shortMinLength: 5 };
+        saveChatConfig();
+    }
+}
+
+function saveChatConfig() {
+    try {
+        fs.writeFileSync(CHAT_CONFIG_FILE, JSON.stringify(chatConfig, null, 2), "utf8");
+        console.log("💾 chatconfig.json salvato.");
+    } catch (err) {
+        console.error("⚠ Errore salvando chatconfig.json:", err);
+    }
+}
+
+loadChatConfig();
 
 // ------------------------------------------------------------
 // CONFIG SERVER (serverconfig.json)
@@ -695,7 +733,27 @@ const commands = [
     new SlashCommandBuilder()
         .setName("perm-list")
         .setDescription("Mostra quali ruoli sono autorizzati ai comandi del bot")
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+
+    // 🔹 NUOVO: gestione messaggi corti
+    new SlashCommandBuilder()
+        .setName("chat-short")
+        .setDescription("Mostra o imposta la lunghezza minima dei messaggi (anti spam)")
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+        .addStringOption(opt =>
+            opt.setName("azione")
+               .setDescription("Scegli se leggere o impostare")
+               .setRequired(true)
+               .addChoices(
+                   { name: "Mostra valore attuale", value: "get" },
+                   { name: "Imposta nuovo valore", value: "set" }
+               )
+        )
+        .addIntegerOption(opt =>
+            opt.setName("valore")
+               .setDescription("Nuova lunghezza minima (2 - 200 caratteri)")
+               .setRequired(false)
+        )
 ];
 
 // ------------------------------------------------------------
@@ -1127,6 +1185,45 @@ client.on("interactionCreate", async interaction => {
                 ephemeral: true
             });
         }
+
+        // ---------------- chat-short ----------------
+        if (commandName === "chat-short") {
+            const action = interaction.options.getString("azione", true); // "get" | "set"
+            const value = interaction.options.getInteger("valore");
+
+            if (action === "get") {
+                return interaction.reply({
+                    content:
+                        `💬 Lunghezza minima messaggi attuale: **${chatConfig.shortMinLength}** caratteri.\n` +
+                        `Messaggi più corti (senza allegati) vengono rimossi automaticamente.`,
+                    ephemeral: true
+                });
+            }
+
+            if (action === "set") {
+                if (value === null) {
+                    return interaction.reply({
+                        content: "⚠ Devi specificare un valore numerico per `valore`.",
+                        ephemeral: true
+                    });
+                }
+
+                if (value < 2 || value > 200) {
+                    return interaction.reply({
+                        content: "⚠ Il valore deve essere compreso tra **2** e **200** caratteri.",
+                        ephemeral: true
+                    });
+                }
+
+                chatConfig.shortMinLength = value;
+                saveChatConfig();
+
+                return interaction.reply({
+                    content: `✅ Lunghezza minima messaggi aggiornata a **${value}** caratteri.`,
+                    ephemeral: true
+                });
+            }
+        }
     }
 
     // --------------------------------------------------------
@@ -1228,7 +1325,7 @@ client.on("interactionCreate", async interaction => {
 });
 
 // ------------------------------------------------------------
-// MESSAGGI – XP (solo se sta giocando a DayZ) + AI
+// MESSAGGI – filtro messaggi corti + XP (solo se sta giocando a DayZ) + AI
 // ------------------------------------------------------------
 
 client.on("messageCreate", async message => {
@@ -1242,11 +1339,49 @@ client.on("messageCreate", async message => {
 
     const member = message.member;
 
+    // --------------------------------------------------------
+    // FILTRO MESSAGGI CORTI (anti spam)
+    // Non si applica a: ticket, AI, messaggi con allegati
+    // --------------------------------------------------------
+    const content = (message.content || "").trim();
+
+    if (
+        !isTicket &&
+        !isAI &&
+        member &&
+        content.length > 0 &&
+        content.length < chatConfig.shortMinLength &&
+        message.attachments.size === 0
+    ) {
+        try {
+            await message.delete();
+        } catch (err) {
+            console.error("⚠ Errore cancellando messaggio corto:", err);
+            return;
+        }
+
+        try {
+            const warn = await message.channel.send(
+                `💬 ${message.author}, i messaggi troppo corti vengono rimossi per evitare spam.`
+            );
+            setTimeout(() => {
+                warn.delete().catch(() => {});
+            }, 5000);
+        } catch (err) {
+            console.error("⚠ Errore inviando avviso messaggio corto:", err);
+        }
+
+        return; // niente XP / AI per questo messaggio
+    }
+
+    // --------------------------------------------------------
     // XP solo in canali normali (no ticket, no AI) E solo se sta giocando a DayZ
+    // (al momento XP per messaggi = 0, lasciato per futura riattivazione)
+    // --------------------------------------------------------
     if (!isTicket && !isAI && member) {
         if (isPlayingDayZ(member)) {
-            const res = addXP(guildId, userId, 0);
-            const beforeLevel = getLevelInfo(res.xp -0).level;
+            const res = addXP(guildId, userId, 0); // 0 = XP disattivati
+            const beforeLevel = getLevelInfo(res.xp - 0).level;
             if (res.newLevel > beforeLevel) {
                 try {
                     const guildMember = await message.guild.members.fetch(userId);
@@ -1258,7 +1393,9 @@ client.on("messageCreate", async message => {
         }
     }
 
+    // --------------------------------------------------------
     // Gestione AI nei canali AI_SESSION
+    // --------------------------------------------------------
     if (isAI) {
         if (!aiSessions[message.channel.id]) {
             aiSessions[message.channel.id] = {
