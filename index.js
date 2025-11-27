@@ -1,13 +1,9 @@
-// V 1.5 beta
-// ------------------------------------------------------------
-// 69x Pacific AI Unit - Bot Discord per 69x Pacific Land | Sakhal
-// File unico (index.js)
-// ------------------------------------------------------------
+// V 1.5 beta - 69x Pacific AI Unit
+// Bot Discord per 69x Pacific Land | Sakhal
 
 require("dotenv").config();
 
 const os = require("os");
-const { exec } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
@@ -97,32 +93,26 @@ const {
 } = require("discord.js");
 
 // ------------------------------------------------------------
-// CONFIG ID SERVER / CANALI
+// COSTANTI / CONFIG
 // ------------------------------------------------------------
 
-const CLIENT_ID = "1442475115743940611";
-const SERVER_ID = "1442125105575628891";
+const CLIENT_ID = process.env.CLIENT_ID || "1442475115743940611";
+const SERVER_ID = process.env.SERVER_ID || "1442125105575628891";
 
-const RULES_CHANNEL_ID = "1442141514464759868"; // opzionale se vuoi usare ID fisso
-const RULES_CHANNEL_NAME = "📜┃regole・rules";
-
-const NEW_USER_CHANNEL_ID = "1442568117296562266"; // se ti serve per future welcome
+const RULES_CHANNEL_ID = process.env.RULES_CHANNEL_ID || null;
+const RULES_CHANNEL_NAME = "📜│rules";
 
 const SUPPORT_CATEGORY_NAME = "🆘 Supporto • Support";
 const AI_CATEGORY_NAME = "🤖 AI Sessions";
-
-const PROJECT_PATH = "/home/andrea/69x-pacific-ai-unit";
-const AUTOUPDATE_LOG = "/home/andrea/pacificbot-autoupdate.log";
-
-// ------------------------------------------------------------
-// FILE CONFIG & STORAGE
-// ------------------------------------------------------------
 
 const SERVER_CONFIG_FILE = path.join(__dirname, "serverconfig.json");
 const LEVELS_FILE = path.join(__dirname, "levels.json");
 const AI_SESSIONS_FILE = path.join(__dirname, "ai_sessions.json");
 const PERMISSIONS_FILE = path.join(__dirname, "permissions.json");
 const RULES_MESSAGE_FILE = path.join(__dirname, "rules_message.json");
+
+const AI_SESSION_TIMEOUT_MINUTES = 30;
+const AI_SESSION_TIMEOUT_MS = AI_SESSION_TIMEOUT_MINUTES * 60 * 1000;
 
 // ------------------------------------------------------------
 // CONFIG SERVER (serverconfig.json)
@@ -139,7 +129,7 @@ function getDefaultServerConfig() {
         wipe: "Ogni 30 giorni",
         restart: "Ogni 2 ore",
         mods: "Trader, Custom Loot, Vehicles",
-        style: "Full PvP - ",
+        style: "Full PvP - Hardcore",
         discord: "69x Pacific Land full PvP"
     };
 }
@@ -239,13 +229,6 @@ function addXP(guildId, userId, amount) {
     };
 }
 
-function setXP(guildId, userId, xpValue) {
-    ensureUserData(guildId, userId);
-    levelsData[guildId][userId].xp = Math.max(0, xpValue);
-    saveLevels();
-    return getLevelInfo(levelsData[guildId][userId].xp);
-}
-
 function getUserLevelInfo(guildId, userId) {
     if (!levelsData[guildId] || !levelsData[guildId][userId]) {
         return getLevelInfo(0);
@@ -256,13 +239,9 @@ function getUserLevelInfo(guildId, userId) {
 loadLevels();
 
 // ------------------------------------------------------------
-// CONFIG XP & RUOLI (aggiornato con ID reali) - Modalità A
+// CONFIG XP & RUOLI (ID reali server)
 // ------------------------------------------------------------
 
-const XP_TICK_INTERVAL_MS = 5 * 60 * 1000;
-const XP_PER_TICK = 20;
-
-// Ruoli XP legati agli ID reali del server
 const RANK_ROLES = [
     { level: 0,  name: "Fresh Spawn",    roleId: "1442570652228784240" },
     { level: 1,  name: "Survivor",       roleId: "1442570651696107711" },
@@ -274,22 +253,12 @@ const RANK_ROLES = [
 
 const FRESH_SPAWN_ROLE_ID = "1442570652228784240";
 
-function getDefaultAnnounceChannel(guild) {
-    let ch = guild.channels.cache.find(
-        c => c.type === ChannelType.GuildText && c.name.includes("generale")
-    );
-    if (ch) return ch;
-    ch = guild.channels.cache.find(c => c.type === ChannelType.GuildText);
-    return ch || null;
-}
-
-// Modalità A → quando assegna un rank, toglie tutti gli altri rank XP
 async function updateRankRoles(guild, member, newLevel) {
     try {
         const availableRanks = RANK_ROLES.filter(r => newLevel >= r.level);
         if (availableRanks.length === 0) return;
 
-        const bestRank = availableRanks[availableRanks.length - 1]; // più alto raggiunto
+        const bestRank = availableRanks[availableRanks.length - 1];
         const roleToAdd = guild.roles.cache.get(bestRank.roleId);
 
         if (!roleToAdd) {
@@ -297,10 +266,8 @@ async function updateRankRoles(guild, member, newLevel) {
             return;
         }
 
-        // se ha già il ruolo corretto, non faccio nulla
         if (member.roles.cache.has(roleToAdd.id)) return;
 
-        // rimuovo tutti gli altri ruoli XP
         for (const rank of RANK_ROLES) {
             if (rank.roleId === roleToAdd.id) continue;
             const oldRole = guild.roles.cache.get(rank.roleId);
@@ -309,7 +276,6 @@ async function updateRankRoles(guild, member, newLevel) {
             }
         }
 
-        // assegno il nuovo ruolo
         await member.roles.add(roleToAdd).catch(() => {});
         console.log(
             `✅ Assegnato ruolo "${bestRank.name}" (${roleToAdd.id}) a ${member.user.tag} (lvl ${newLevel}).`
@@ -392,10 +358,9 @@ loadAiSessions();
 
 let botPermissions = {
     allowedRoles: [
-        // default: Overlord, Command Unit, Field Officer
-        "1442570648022024292",
-        "1442570648705568798",
-        "1442570649724784671"
+        "1442570648022024292", // Overlord
+        "1442570648705568798", // Command Unit
+        "1442570649724784671"  // Field Officer
     ],
     ownerOverride: true
 };
@@ -596,14 +561,12 @@ async function createAiChannel(guild, user) {
 
     const introEmbed = new EmbedBuilder()
         .setTitle("🤖 Canale personale con l'AI – Sakhal Assistant")
-        .setDescription(`
-🇮🇹 Qui puoi fare domande sull'esperienza di gioco su **${serverConfig.name}**.
-
-⏱ Questo canale verrà eliminato dopo **${AI_SESSION_TIMEOUT_MINUTES} minuti di inattività**.
-
-🇬🇧 Here you can ask questions about **${serverConfig.name}**.  
-Channel will be auto-deleted after **${AI_SESSION_TIMEOUT_MINUTES} minutes of inactivity**.
-        `)
+        .setDescription(
+            `🇮🇹 Qui puoi fare domande sull'esperienza di gioco su **${serverConfig.name}**.\n\n` +
+            `⏱ Questo canale verrà eliminato dopo **${AI_SESSION_TIMEOUT_MINUTES} minuti di inattività**.\n\n` +
+            `🇬🇧 Here you can ask questions about **${serverConfig.name}**.\n` +
+            `Channel will be auto-deleted after **${AI_SESSION_TIMEOUT_MINUTES} minutes of inactivity**.`
+        )
         .setColor("DarkPurple");
 
     await channel.send({ embeds: [introEmbed] });
@@ -721,7 +684,7 @@ const commands = [
 // REGISTRAZIONE COMANDI
 // ------------------------------------------------------------
 
-const rest = new REST({ version: "10" }).setToken(process.env.BOT_TOKEN);
+const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 
 async function registerCommands() {
     try {
@@ -736,8 +699,59 @@ async function registerCommands() {
 }
 
 // ------------------------------------------------------------
-// AUTO-SETUP MESSAGGIO REGOLE in 📜│rules
+// AUTO-SETUP MESSAGGIO REGOLE
 // ------------------------------------------------------------
+
+function getRulesText() {
+    return [
+        "➡️ Premi il pulsante qui sotto per accettare le regole ed entrare nel server.",
+        "➡️ Click the button below to **accept the rules** and enter the server.",
+        "",
+        "🇮🇹 **REGOLE GENERALI**",
+        "- Vietati cheat, exploit, macro, glitch.",
+        "- Vietati insulti razziali, minacce reali e contenuti NSFW (ban diretto).",
+        "- Duping e bug abuse = ban permanente.",
+        "",
+        "⚔️ **PvP / Raid**",
+        "- PvP ovunque (FULL PVP).",
+        "- Vietato camping eccessivo dell'eventuale safezone.",
+        "- Vietato combat log intenzionale.",
+        "",
+        "🏠 **Base Building**",
+        "- Max 1 base per team.",
+        "- No basi in glitch / map holes / zone protette.",
+        "- La base deve essere raidabile.",
+        "",
+        "🚗 **Veicoli**",
+        "- Veicoli lasciati in safezone >24h possono essere rimossi.",
+        "- Vietato bloccare strade o trollare con i veicoli.",
+        "",
+        "👥 **Staff**",
+        "- Lo staff ha l'ultima parola su interpretazione delle regole.",
+        "",
+        "🇬🇧 **GENERAL RULES**",
+        "- No cheats, exploits, macros or glitches.",
+        "- No racism, real life threats or NSFW content (instant ban).",
+        "- Duping and bug abuse = permanent ban.",
+        "",
+        "⚔️ **PvP / Raiding**",
+        "- PvP everywhere (FULL PvP).",
+        "- No excessive camping of any safezone.",
+        "- No intentional combat log.",
+        "",
+        "🏠 **Base Building**",
+        "- Max 1 base per team.",
+        "- No bases in glitches / map holes / protected areas.",
+        "- Base must be raid-able.",
+        "",
+        "🚗 **Vehicles**",
+        "- Vehicles left in safezone >24h may be removed.",
+        "- No blocking roads or trolling with vehicles.",
+        "",
+        "👥 **Staff**",
+        "- Staff always has the final word on rules."
+    ].join("\n");
+}
 
 async function ensureRulesMessage(client) {
     try {
@@ -764,7 +778,6 @@ async function ensureRulesMessage(client) {
             return;
         }
 
-        // Se abbiamo messageId, vediamo se esiste ancora
         if (
             rulesMessageInfo.guildId === guild.id &&
             rulesMessageInfo.channelId === channel.id &&
@@ -781,48 +794,9 @@ async function ensureRulesMessage(client) {
             console.log("📜 Nessun messaggio regole salvato, lo creo ora...");
         }
 
-        // Crea embed + bottone (stesso stile di /sendrules)
         const embed = new EmbedBuilder()
             .setTitle("📕 Rules / Regolamento – 69x Pacific Land (Full PvP)")
-            .setDescription(
-                "➡️ Premi il pulsante qui sotto per accettare le regole ed entrare nel server.\n" +
-                "➡️ Click the button below to **accept the rules** and enter the server.\n" +
-                "🇮🇹 **REGOLE GENERALI**\n" +
-                "- Vietati cheat, exploit, macro, glitch.\n" +
-                "- Vietati insulti razziali, minacce reali e contenuti NSFW (ban diretto).\n" +
-                "- Duping e bug abuse = ban permanente.\n\n" +
-                "⚔️ **PvP / Raid**\n" +
-                "- PvP ovunque (FULL PVP).\n" +
-                "- Vietato camping eccessivo dell'eventuale safezone.\n" +
-                "- Vietato combat log intenzionale.\n\n" +
-                "🏠 **Base Building**\n" +
-                "- Max 1 base per team.\n" +
-                "- No basi in glitch / map holes / zone protette.\n" +
-                "- La base deve essere raidabile.\n\n" +
-                "🚗 **Veicoli**\n" +
-                "- Veicoli lasciati in safezone >24h possono essere rimossi.\n" +
-                "- Vietato bloccare strade o trollare con i veicoli.\n\n" +
-                "👥 **Staff**\n" +
-                "- Lo staff ha l'ultima parola su interpretazione delle regole.\n\n" +
-                "🇬🇧 **GENERAL RULES**\n" +
-                "- No cheats, exploits, macros or glitches.\n" +
-                "- No racism, real life threats or NSFW content (instant ban).\n" +
-                "- Duping and bug abuse = permanent ban.\n\n" +
-                "⚔️ **PvP / Raiding**\n" +
-                "- PvP everywhere (FULL PvP).\n" +
-                "- No excessive camping of any safezone.\n" +
-                "- No intentional combat log.\n\n" +
-                "🏠 **Base Building**\n" +
-                "- Max 1 base per team.\n" +
-                "- No bases in glitches / map holes / protected areas.\n" +
-                "- Base must be raid-able.\n\n" +
-                "🚗 **Vehicles**\n" +
-                "- Vehicles left in safezone >24h may be removed.\n" +
-                "- No blocking roads or trolling with vehicles.\n\n" +
-                "👥 **Staff**\n" +
-                "- Staff always has the final word on rules.\n\n" 
-                
-            )
+            .setDescription(getRulesText())
             .setColor("Red");
 
         const row = new ActionRowBuilder().addComponents(
@@ -853,7 +827,7 @@ async function ensureRulesMessage(client) {
 
 client.on("interactionCreate", async interaction => {
     // --------------------------------------------------------
-    // Protezione globale comandi slash: solo ruoli in permissions.json (o owner)
+    // PROTEZIONE COMANDI SLASH
     // --------------------------------------------------------
     if (interaction.isChatInputCommand()) {
         const member = interaction.member;
@@ -880,45 +854,7 @@ client.on("interactionCreate", async interaction => {
         if (commandName === "sendrules") {
             const embed = new EmbedBuilder()
                 .setTitle("📕 Rules / Regolamento – 69x Pacific Land (Full PvP)")
-                .setDescription(
-                    "➡️ Premi il pulsante qui sotto per accettare le regole ed entrare nel server.\n" +
-                    "➡️ Click the button below to **accept the rules** and enter the server.\n" +
-                    "🇮🇹 **REGOLE GENERALI**\n" +
-                    "- Vietati cheat, exploit, macro, glitch.\n" +
-                    "- Vietati insulti razziali, minacce reali e contenuti NSFW (ban diretto).\n" +
-                    "- Duping e bug abuse = ban permanente.\n\n" +
-                    "⚔️ **PvP / Raid**\n" +
-                    "- PvP ovunque (FULL PVP).\n" +
-                    "- Vietato camping eccessivo dell'eventuale safezone.\n" +
-                    "- Vietato combat log intenzionale.\n\n" +
-                    "🏠 **Base Building**\n" +
-                    "- Max 1 base per team.\n" +
-                    "- No basi in glitch / map holes / zone protette.\n" +
-                    "- La base deve essere raidabile.\n\n" +
-                    "🚗 **Veicoli**\n" +
-                    "- Veicoli lasciati in safezone >24h possono essere rimossi.\n" +
-                    "- Vietato bloccare strade o trollare con i veicoli.\n\n" +
-                    "👥 **Staff**\n" +
-                    "- Lo staff ha l'ultima parola su interpretazione delle regole.\n\n" +
-                    "🇬🇧 **GENERAL RULES**\n" +
-                    "- No cheats, exploits, macros or glitches.\n" +
-                    "- No racism, real life threats or NSFW content (instant ban).\n" +
-                    "- Duping and bug abuse = permanent ban.\n\n" +
-                    "⚔️ **PvP / Raiding**\n" +
-                    "- PvP everywhere (FULL PvP).\n" +
-                    "- No excessive camping of any safezone.\n" +
-                    "- No intentional combat log.\n\n" +
-                    "🏠 **Base Building**\n" +
-                    "- Max 1 base per team.\n" +
-                    "- No bases in glitches / map holes / protected areas.\n" +
-                    "- Base must be raid-able.\n\n" +
-                    "🚗 **Vehicles**\n" +
-                    "- Vehicles left in safezone >24h may be removed.\n" +
-                    "- No blocking roads or trolling with vehicles.\n\n" +
-                    "👥 **Staff**\n" +
-                    "- Staff always has the final word on rules.\n\n" 
-
-                )
+                .setDescription(getRulesText())
                 .setColor("Red");
 
             const row = new ActionRowBuilder().addComponents(
@@ -1006,8 +942,8 @@ client.on("interactionCreate", async interaction => {
             const info = getUserLevelInfo(interaction.guild.id, target.id);
 
             try {
-                const member = await interaction.guild.members.fetch(target.id);
-                await updateRankRoles(interaction.guild, member, info.level);
+                const memberTarget = await interaction.guild.members.fetch(target.id);
+                await updateRankRoles(interaction.guild, memberTarget, info.level);
             } catch (err) {
                 console.error("Errore updateRankRoles in /xp-add:", err);
             }
@@ -1068,7 +1004,7 @@ client.on("interactionCreate", async interaction => {
             const key = interaction.options.getString("chiave", true);
             const val = interaction.options.getString("valore", true);
 
-            if (!serverConfig.hasOwnProperty(key)) {
+            if (!Object.prototype.hasOwnProperty.call(serverConfig, key)) {
                 return interaction.reply({
                     content: `⚠️ Il parametro **${key}** non esiste in serverconfig.json.`,
                     ephemeral: true
@@ -1178,64 +1114,68 @@ client.on("interactionCreate", async interaction => {
     // --------------------------------------------------------
     // BUTTONS
     // --------------------------------------------------------
-if (interaction.isButton()) {
-    const id = interaction.customId;
+    if (interaction.isButton()) {
+        const id = interaction.customId;
 
-    // Bottone "ACCETTO LE REGOLE"
-    if (id === "rules_accept_button") {
-        const member = interaction.member;
+        // Bottone "ACCETTO LE REGOLE"
+        if (id === "rules_accept_button") {
+            const member = interaction.member;
 
-        // Ottieni tutti i ruoli XP definiti nella logica
-        const xpRoles = RANK_ROLES.map(r => r.roleId).filter(Boolean);
+            const xpRoles = RANK_ROLES.map(r => r.roleId).filter(Boolean);
+            const freshRole = xpRoles[0] || FRESH_SPAWN_ROLE_ID;
+            const userRoles = member.roles.cache.map(r => r.id);
 
-        // Fresh Spawn è sempre il primo nella lista ruoli XP
-        const freshRole = xpRoles[0];
-        const userRoles = member.roles.cache.map(r => r.id);
+            const hasHigherRank = xpRoles.slice(1).some(r => userRoles.includes(r));
 
-        // Controllo se l’utente ha un ruolo superiore a Fresh Spawn
-        const hasHigherRank = xpRoles.slice(1).some(r => userRoles.includes(r));
+            if (hasHigherRank) {
+                return interaction.reply({
+                    content:
+                        "🛡 Hai già un rango più alto — non serve premere di nuovo.\n\n" +
+                        "🛡 You already have a higher rank — no need to press again.",
+                    ephemeral: true
+                });
+            }
 
-        if (hasHigherRank) {
+            if (userRoles.includes(freshRole)) {
+                return interaction.reply({
+                    content:
+                        "✔ Hai già accettato le regole.\n" +
+                        "✔ You already accepted the rules.",
+                    ephemeral: true
+                });
+            }
+
+            const roleObj = interaction.guild.roles.cache.get(freshRole);
+            if (!roleObj) {
+                return interaction.reply({
+                    content:
+                        "⚠ Errore: ruolo Fresh Spawn non trovato. Avvisa lo staff.\n" +
+                        "⚠ Error: Fresh Spawn role not found. Contact staff.",
+                    ephemeral: true
+                });
+            }
+
+            try {
+                await member.roles.add(roleObj, "Ha accettato le regole");
+            } catch (err) {
+                console.error("Errore assegnando Fresh Spawn:", err);
+                return interaction.reply({
+                    content:
+                        "⚠ Errore durante l'assegnazione del ruolo. Avvisa lo staff.\n" +
+                        "⚠ Error assigning role. Contact staff.",
+                    ephemeral: true
+                });
+            }
+
             return interaction.reply({
                 content:
-                    "🛡 Hai già un rango più alto — non serve premere di nuovo.\n\n" +
-                    "🛡 You already have a higher rank — no need to press again.",
+                    "🔥 Benvenuto sopravvissuto — ora sei un **Fresh Spawn**.\n" +
+                    "Ricorda: nessuno verrà a salvarti.\n\n" +
+                    "🔥 Welcome survivor — you are now a **Fresh Spawn**.\n" +
+                    "Remember: no one is coming to save you.",
                 ephemeral: true
             });
         }
-
-        // Se l’utente ha già Fresh Spawn → non fare nulla
-        if (userRoles.includes(freshRole)) {
-            return interaction.reply({
-                content:
-                    "✔ Hai già accettato le regole.\n" +
-                    "✔ You already accepted the rules.",
-                ephemeral: true
-            });
-        }
-
-        // Assegna Fresh Spawn
-        try {
-            await member.roles.add(freshRole, "Ha accettato le regole");
-        } catch (err) {
-            return interaction.reply({
-                content:
-                    "⚠ Errore durante l'assegnazione del ruolo. Avvisa lo staff.\n" +
-                    "⚠ Error assigning role. Contact staff.",
-                ephemeral: true
-            });
-        }
-
-        // Messaggio finale di conferma
-        return interaction.reply({
-            content:
-                "🔥 Benvenuto sopravvissuto — ora sei un **Fresh Spawn**.\n" +
-                "Ricorda: nessuno verrà a salvarti.\n\n" +
-                "🔥 Welcome survivor — you are now a **Fresh Spawn**.\n" +
-                "Remember: no one is coming to save you.",
-            ephemeral: true
-        });
-
 
         // XP – Mostra i miei XP
         if (id === "xp_show_button") {
@@ -1282,11 +1222,11 @@ client.on("messageCreate", async message => {
     const isTicket = message.channel.name?.startsWith("ticket-");
     const isAI = message.channel.topic && message.channel.topic.includes("AI_SESSION");
 
-    // XP solo in canali normali (no ticket, no AI)
+    // XP solo in canali normali
     if (!isTicket && !isAI) {
         const res = addXP(guildId, userId, 2);
-        const before = getLevelInfo(res.xp - 2).level;
-        if (res.newLevel > before) {
+        const beforeLevel = getLevelInfo(res.xp - 2).level;
+        if (res.newLevel > beforeLevel) {
             try {
                 const member = await message.guild.members.fetch(userId);
                 await updateRankRoles(message.guild, member, res.newLevel);
@@ -1330,7 +1270,7 @@ client.on("messageCreate", async message => {
 // READY
 // ------------------------------------------------------------
 
-client.once("clientReady", async () => {
+client.once("ready", async () => {
     console.log(`✅ Loggato come ${client.user.tag}`);
     client.user.setPresence({
         activities: [{ name: "69x Pacific Land | FULL PvP", type: ActivityType.Playing }],
@@ -1346,4 +1286,4 @@ client.once("clientReady", async () => {
 // LOGIN
 // ------------------------------------------------------------
 
-client.login(process.env.BOT_TOKEN);
+client.login(process.env.DISCORD_TOKEN);
