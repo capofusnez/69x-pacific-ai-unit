@@ -1,4 +1,4 @@
-// V 1.6 beta - 69x Pacific AI Unit
+// V 1.7 beta - 69x Pacific AI Unit
 // Bot Discord per 69x Pacific Land | Sakhal
 
 require("dotenv").config();
@@ -102,11 +102,12 @@ const SERVER_ID = process.env.SERVER_ID || "1442125105575628891";
 const RULES_CHANNEL_ID = process.env.RULES_CHANNEL_ID || "1442141514464759868";
 const RULES_CHANNEL_NAME = "📜│rules";
 
+const NEW_USER_CHANNEL_ID = process.env.WELCOME_CHANNEL_ID || "1442568117296562266";
 const SUPPORT_CATEGORY_NAME = "🆘 Supporto • Support";
 const AI_CATEGORY_NAME = "🤖 AI Sessions";
 
-// 👉 Categoria archivio ticket chiusi
-const CLOSED_TICKETS_CATEGORY_ID = "1443351281145086144";
+// Categoria archivio ticket (già esistente)
+const TICKET_ARCHIVE_CATEGORY_ID = process.env.TICKET_ARCHIVE_CATEGORY_ID || "1443351281145086144";
 
 const SERVER_CONFIG_FILE = path.join(__dirname, "serverconfig.json");
 const LEVELS_FILE = path.join(__dirname, "levels.json");
@@ -116,6 +117,10 @@ const RULES_MESSAGE_FILE = path.join(__dirname, "rules_message.json");
 
 const AI_SESSION_TIMEOUT_MINUTES = 30;
 const AI_SESSION_TIMEOUT_MS = AI_SESSION_TIMEOUT_MINUTES * 60 * 1000;
+
+// XP a tempo mentre gioca a DayZ
+const XP_TICK_INTERVAL_MS = 5 * 60 * 1000; // ogni 5 minuti
+const XP_PER_TICK = 10;                    // XP per tick
 
 // ------------------------------------------------------------
 // CONFIG SERVER (serverconfig.json)
@@ -434,7 +439,7 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildPresences // 👈 per vedere se giocano a DayZ
+        GatewayIntentBits.GuildPresences
     ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
@@ -493,32 +498,75 @@ async function getOrCreateTextChannel(guild, name, parentCategory) {
 // TICKET HELPERS
 // ------------------------------------------------------------
 
-async function createTicketChannel(guild, user, typeLabel = "Supporto generale") {
+const TICKET_TYPES = {
+    support: {
+        label: "🧰 Supporto generale",
+        descriptionIt: "Supporto generale / domande sul server.",
+        descriptionEn: "General support / questions about the server."
+    },
+    bug: {
+        label: "🛠 Bug / Problema tecnico",
+        descriptionIt: "Segnala bug o problemi tecnici.",
+        descriptionEn: "Report bugs or technical issues."
+    },
+    report: {
+        label: "🚨 Segnalazione giocatore / comportamento",
+        descriptionIt: "Segnala cheater, insulti, comportamenti scorretti.",
+        descriptionEn: "Report cheaters, insults or bad behavior."
+    },
+    suggestion: {
+        label: "💡 Richiesta / Suggestion",
+        descriptionIt: "Proposte, idee, modifiche al server.",
+        descriptionEn: "Suggestions, ideas, changes to the server."
+    },
+    ban: {
+        label: "⚖️ Ban & Appeal",
+        descriptionIt: "Richieste di unban o chiarimenti sui ban.",
+        descriptionEn: "Unban requests or ban clarification."
+    }
+};
+
+async function createTicketChannel(guild, user, typeKey = "support") {
+    const typeInfo = TICKET_TYPES[typeKey] || TICKET_TYPES.support;
+
     const catSupport = await getOrCreateCategory(guild, SUPPORT_CATEGORY_NAME);
-    const baseNameUser = user.username.toLowerCase().replace(/[^a-z0-9\-]/g, "");
-    const baseNameType = typeLabel.toLowerCase().split(" ")[0].replace(/[^a-z0-9\-]/g, "");
+    const baseName = `ticket-${typeKey}-${user.username}`.toLowerCase().replace(/[^a-z0-9\-]/g, "");
     const uniqueId = user.id.slice(-4);
-    const channelName = `ticket-${baseNameType}-${baseNameUser}-${uniqueId}`;
+    const channelName = `${baseName}-${uniqueId}`;
+
+    const permissionOverwrites = [
+        {
+            id: guild.roles.everyone.id,
+            deny: [PermissionFlagsBits.ViewChannel]
+        },
+        {
+            id: user.id,
+            allow: [
+                PermissionFlagsBits.ViewChannel,
+                PermissionFlagsBits.SendMessages,
+                PermissionFlagsBits.ReadMessageHistory
+            ]
+        }
+    ];
+
+    // consenti ai ruoli staff del bot di vedere il ticket
+    for (const roleId of botPermissions.allowedRoles) {
+        permissionOverwrites.push({
+            id: roleId,
+            allow: [
+                PermissionFlagsBits.ViewChannel,
+                PermissionFlagsBits.SendMessages,
+                PermissionFlagsBits.ReadMessageHistory
+            ]
+        });
+    }
 
     const channel = await guild.channels.create({
         name: channelName,
         type: ChannelType.GuildText,
         parent: catSupport.id,
-        topic: `Ticket (${typeLabel}) aperto da USERID: ${user.id}`,
-        permissionOverwrites: [
-            {
-                id: guild.roles.everyone.id,
-                deny: [PermissionFlagsBits.ViewChannel]
-            },
-            {
-                id: user.id,
-                allow: [
-                    PermissionFlagsBits.ViewChannel,
-                    PermissionFlagsBits.SendMessages,
-                    PermissionFlagsBits.ReadMessageHistory
-                ]
-            }
-        ]
+        topic: `Ticket (${typeInfo.label}) aperto da USERID: ${user.id}`,
+        permissionOverwrites
     });
 
     const closeRow = new ActionRowBuilder().addComponents(
@@ -528,20 +576,67 @@ async function createTicketChannel(guild, user, typeLabel = "Supporto generale")
             .setStyle(ButtonStyle.Danger)
     );
 
+    const embed = new EmbedBuilder()
+        .setTitle(`🎫 ${typeInfo.label}`)
+        .setDescription(
+            `🇮🇹 ${typeInfo.descriptionIt}\n` +
+            `🇬🇧 ${typeInfo.descriptionEn}\n\n` +
+            `Staff ti risponderà qui il prima possibile.\n` +
+            `When you're done, close the ticket with the button below.`
+        )
+        .setColor("Blue");
+
     await channel.send({
-        content: `
-🎫 **Nuovo ticket aperto da <@${user.id}>**
-📂 **Tipo:** ${typeLabel}
-
-🇮🇹 Scrivi qui il tuo problema, domanda o segnalazione.  
-🇬🇧 Write here your issue, question or report.
-
-Quando hai finito, chiudi il ticket con il pulsante qui sotto.
-        `,
+        content: `🎫 **Nuovo ticket aperto da <@${user.id}>**`,
+        embeds: [embed],
         components: [closeRow]
     });
 
     return channel;
+}
+
+async function moveTicketToArchive(channel) {
+    const guild = channel.guild;
+
+    let archiveCategory = null;
+
+    if (TICKET_ARCHIVE_CATEGORY_ID) {
+        archiveCategory = await guild.channels.fetch(TICKET_ARCHIVE_CATEGORY_ID).catch(() => null);
+    }
+
+    if (!archiveCategory || archiveCategory.type !== ChannelType.GuildCategory) {
+        archiveCategory = guild.channels.cache.find(
+            c => c.type === ChannelType.GuildCategory && c.name.includes("ticket-archivio")
+        );
+    }
+
+    if (!archiveCategory) {
+        archiveCategory = await guild.channels.create({
+            name: "📁│ticket-archivio",
+            type: ChannelType.GuildCategory
+        });
+    }
+
+    await channel.setParent(archiveCategory.id, { lockPermissions: false });
+
+    const overwrites = [
+        {
+            id: guild.roles.everyone.id,
+            deny: [PermissionFlagsBits.ViewChannel]
+        }
+    ];
+
+    for (const roleId of botPermissions.allowedRoles) {
+        overwrites.push({
+            id: roleId,
+            allow: [
+                PermissionFlagsBits.ViewChannel,
+                PermissionFlagsBits.ReadMessageHistory
+            ]
+        });
+    }
+
+    await channel.permissionOverwrites.set(overwrites);
 }
 
 // ------------------------------------------------------------
@@ -619,12 +714,12 @@ const commands = [
 
     new SlashCommandBuilder()
         .setName("ticket")
-        .setDescription("Apri un ticket con lo staff"),
+        .setDescription("Apri un ticket immediato (solo staff, per test)")
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
-    // 👉 NUOVO: Pannello ticket
     new SlashCommandBuilder()
         .setName("ticket-panel")
-        .setDescription("Invia un pannello con pulsanti per aprire ticket (solo staff)")
+        .setDescription("Invia il pannello per aprire ticket (utenti usano i pulsanti)")
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
     new SlashCommandBuilder()
@@ -851,6 +946,49 @@ async function ensureRulesMessage(client) {
 }
 
 // ------------------------------------------------------------
+// LOOP XP A TEMPO (mentre gioca a DayZ)
+// ------------------------------------------------------------
+
+async function xpTickWhilePlayingDayZ(client) {
+    try {
+        const guild = client.guilds.cache.get(SERVER_ID);
+        if (!guild) return;
+
+        await guild.members.fetch();
+
+        for (const member of guild.members.cache.values()) {
+            if (member.user.bot) continue;
+            if (!isPlayingDayZ(member)) continue;
+
+            const guildId = guild.id;
+            const userId = member.id;
+
+            const beforeInfo = getUserLevelInfo(guildId, userId);
+            const res = addXP(guildId, userId, XP_PER_TICK);
+
+            if (res.newLevel > beforeInfo.level) {
+                try {
+                    await updateRankRoles(guild, member, res.newLevel);
+                } catch (err) {
+                    console.error("⚠ Errore updateRankRoles in xpTickWhilePlayingDayZ:", err);
+                }
+            }
+        }
+    } catch (err) {
+        console.error("⚠ Errore in xpTickWhilePlayingDayZ:", err);
+    }
+}
+
+function startXpWhilePlayingLoop(client) {
+    console.log("⏱ Loop XP DayZ avviato.");
+    setInterval(() => {
+        xpTickWhilePlayingDayZ(client).catch(err =>
+            console.error("⚠ Errore nel loop XP DayZ:", err)
+        );
+    }, XP_TICK_INTERVAL_MS);
+}
+
+// ------------------------------------------------------------
 // INTERACTION HANDLER
 // ------------------------------------------------------------
 
@@ -939,7 +1077,7 @@ client.on("interactionCreate", async interaction => {
 
         // ---------------- ticket ----------------
         if (commandName === "ticket") {
-            const channel = await createTicketChannel(interaction.guild, interaction.user, "Supporto generale");
+            const channel = await createTicketChannel(interaction.guild, interaction.user, "support");
             return interaction.reply({
                 content: `📩 Ticket creato: ${channel}`,
                 ephemeral: true
@@ -948,53 +1086,47 @@ client.on("interactionCreate", async interaction => {
 
         // ---------------- ticket-panel ----------------
         if (commandName === "ticket-panel") {
-            const embed = new EmbedBuilder()
-                .setTitle("🎟️ Apertura Ticket – 69x Pacific Land")
-                .setDescription(
-                    "Seleziona il tipo di ticket che vuoi aprire:\n\n" +
-                    "🧰 **Supporto generale** – Domande generiche, aiuto, info.\n" +
-                    "🛠 **Bug / Problema tecnico** – Errori, crash, problemi tecnici.\n" +
-                    "🚨 **Segnalazione giocatore / comportamento** – Cheater, insulti, comportamenti tossici.\n" +
-                    "💡 **Richiesta / Suggestion** – Idee, miglioramenti, feedback.\n" +
-                    "⚖️ **Ban & Appeal** – Informazioni sui ban, richieste di unban.\n"
-                )
-                .setColor("Orange");
-
-            const row1 = new ActionRowBuilder().addComponents(
+            const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
-                    .setCustomId("ticket_open_general")
+                    .setCustomId("ticket_type_support")
                     .setLabel("🧰 Supporto generale")
                     .setStyle(ButtonStyle.Primary),
                 new ButtonBuilder()
-                    .setCustomId("ticket_open_bug")
+                    .setCustomId("ticket_type_bug")
                     .setLabel("🛠 Bug / Problema tecnico")
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId("ticket_type_report")
+                    .setLabel("🚨 Segnalazione giocatore")
                     .setStyle(ButtonStyle.Danger),
                 new ButtonBuilder()
-                    .setCustomId("ticket_open_report")
-                    .setLabel("🚨 Segnalazione player")
-                    .setStyle(ButtonStyle.Secondary)
-            );
-
-            const row2 = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId("ticket_open_suggest")
+                    .setCustomId("ticket_type_suggestion")
                     .setLabel("💡 Richiesta / Suggestion")
-                    .setStyle(ButtonStyle.Success),
+                    .setStyle(ButtonStyle.Secondary),
                 new ButtonBuilder()
-                    .setCustomId("ticket_open_ban")
+                    .setCustomId("ticket_type_ban")
                     .setLabel("⚖️ Ban & Appeal")
                     .setStyle(ButtonStyle.Secondary)
             );
 
+            const embed = new EmbedBuilder()
+                .setTitle("🎫 Pannello Ticket – 69x Pacific Land")
+                .setDescription(
+                    "Scegli il tipo di ticket che vuoi aprire:\n\n" +
+                    "🧰 **Supporto generale** – Aiuto, domande, problemi vari.\n" +
+                    "🛠 **Bug / Problema tecnico** – Bug del server, errori, crash.\n" +
+                    "🚨 **Segnalazione giocatore** – Cheater, insulti, comportamenti scorretti.\n" +
+                    "💡 **Richiesta / Suggestion** – Idee, proposte, modifiche.\n" +
+                    "⚖️ **Ban & Appeal** – Richiesta unban o chiarimenti sui ban."
+                )
+                .setColor("Orange");
+
             await interaction.reply({
-                content: "📌 Pannello ticket creato in questo canale.",
+                content: "✅ Pannello ticket creato.",
                 ephemeral: true
             });
 
-            await interaction.channel.send({
-                embeds: [embed],
-                components: [row1, row2]
-            });
+            await interaction.channel.send({ embeds: [embed], components: [row] });
         }
 
         // ---------------- ai ----------------
@@ -1247,12 +1379,48 @@ client.on("interactionCreate", async interaction => {
                 });
             }
 
-            return interaction.reply({
+            await interaction.reply({
                 content:
                     "🔥 Benvenuto sopravvissuto — ora sei un **Fresh Spawn**.\n" +
                     "Ricorda: nessuno verrà a salvarti.\n\n" +
                     "🔥 Welcome survivor — you are now a **Fresh Spawn**.\n" +
                     "Remember: no one is coming to save you.",
+                ephemeral: true
+            });
+
+            // Annuncio in canale nuovi utenti
+            try {
+                const newUserChannel = await interaction.guild.channels.fetch(NEW_USER_CHANNEL_ID).catch(() => null);
+                if (newUserChannel && newUserChannel.isTextBased()) {
+                    await newUserChannel.send(
+                        `🧍 Nuovo sopravvissuto: <@${member.id}> è entrato come **Fresh Spawn**.`
+                    );
+                }
+            } catch (err) {
+                console.error("⚠ Errore inviando messaggio nel canale nuovi utenti:", err);
+            }
+
+            return;
+        }
+
+        // Ticket panel – tipi di ticket
+        if (
+            id === "ticket_type_support" ||
+            id === "ticket_type_bug" ||
+            id === "ticket_type_report" ||
+            id === "ticket_type_suggestion" ||
+            id === "ticket_type_ban"
+        ) {
+            let typeKey = "support";
+            if (id === "ticket_type_bug") typeKey = "bug";
+            else if (id === "ticket_type_report") typeKey = "report";
+            else if (id === "ticket_type_suggestion") typeKey = "suggestion";
+            else if (id === "ticket_type_ban") typeKey = "ban";
+
+            const channel = await createTicketChannel(interaction.guild, interaction.user, typeKey);
+
+            return interaction.reply({
+                content: `📩 Ticket creato: ${channel}`,
                 ephemeral: true
             });
         }
@@ -1271,92 +1439,24 @@ client.on("interactionCreate", async interaction => {
             });
         }
 
-        // ---------------- Apertura ticket dal pannello ----------------
-        if (id.startsWith("ticket_open_")) {
-            let typeLabel = "Supporto generale";
-
-            if (id === "ticket_open_general") {
-                typeLabel = "Supporto generale";
-            } else if (id === "ticket_open_bug") {
-                typeLabel = "Bug / Problema tecnico";
-            } else if (id === "ticket_open_report") {
-                typeLabel = "Segnalazione giocatore / comportamento";
-            } else if (id === "ticket_open_suggest") {
-                typeLabel = "Richiesta / Suggestion";
-            } else if (id === "ticket_open_ban") {
-                typeLabel = "Ban & Appeal";
-            }
-
-            const channel = await createTicketChannel(interaction.guild, interaction.user, typeLabel);
-
-            return interaction.reply({
-                content: `📩 Ticket **${typeLabel}** creato: ${channel}`,
-                ephemeral: true
-            });
-        }
-
-        // Ticket – chiudi → ARCHIVIA PRIVATO
+        // Ticket – chiudi → sposta in archivio
         if (id === "ticket_close") {
-            const channel = interaction.channel;
-            const guild = interaction.guild;
-
-            let closedCategory = guild.channels.cache.get(CLOSED_TICKETS_CATEGORY_ID);
-            if (!closedCategory || closedCategory.type !== ChannelType.GuildCategory) {
-                console.log("⚠ CLOSED_TICKETS_CATEGORY_ID non valido o non è una categoria, il ticket non verrà spostato.");
-                closedCategory = null;
-            }
-
-            const newName = channel.name.startsWith("closed-")
-                ? channel.name
-                : `closed-${channel.name}`;
+            await interaction.reply({
+                content: "🔒 Ticket chiuso. Verrà spostato in archivio.",
+                ephemeral: false
+            });
 
             try {
-                if (closedCategory) {
-                    await channel.setParent(closedCategory.id, { lockPermissions: false });
-                }
-
-                await channel.setName(newName);
-
-                await channel.permissionOverwrites.edit(guild.roles.everyone, {
-                    ViewChannel: false,
-                    SendMessages: false
-                });
-
-                await channel.permissionOverwrites.edit(interaction.user.id, {
-                    ViewChannel: true,
-                    SendMessages: false,
-                    ReadMessageHistory: true
-                });
-
-                for (const roleId of botPermissions.allowedRoles) {
-                    await channel.permissionOverwrites.edit(roleId, {
-                        ViewChannel: true,
-                        SendMessages: true,
-                        ReadMessageHistory: true
-                    }).catch(() => {});
-                }
-
-                try {
-                    await interaction.message.edit({ components: [] });
-                } catch (e) {}
-
-                await interaction.reply({
-                    content: "🔒 Ticket chiuso e archiviato. Solo tu e lo staff potete vederlo.",
-                    ephemeral: false
-                });
+                await moveTicketToArchive(interaction.channel);
             } catch (err) {
-                console.error("⚠ Errore chiudendo/spostando il ticket:", err);
-                return interaction.reply({
-                    content: "⚠ C'è stato un errore nel chiudere questo ticket. Avvisa lo staff.",
-                    ephemeral: true
-                });
+                console.error("⚠ Errore spostando ticket in archivio:", err);
             }
         }
     }
 });
 
 // ------------------------------------------------------------
-// MESSAGGI – XP (solo se sta giocando a DayZ) + AI
+// MESSAGGI – solo AI (XP a tempo gestito dal loop)
 // ------------------------------------------------------------
 
 client.on("messageCreate", async message => {
@@ -1368,23 +1468,7 @@ client.on("messageCreate", async message => {
     const isTicket = message.channel.name?.startsWith("ticket-");
     const isAI = message.channel.topic && message.channel.topic.includes("AI_SESSION");
 
-    const member = message.member;
-
-    // XP solo in canali normali (no ticket, no AI) E solo se sta giocando a DayZ
-    if (!isTicket && !isAI && member) {
-        if (isPlayingDayZ(member)) {
-            const res = addXP(guildId, userId, 0);
-            const beforeLevel = getLevelInfo(res.xp - 0).level;
-            if (res.newLevel > beforeLevel) {
-                try {
-                    const guildMember = await message.guild.members.fetch(userId);
-                    await updateRankRoles(message.guild, guildMember, res.newLevel);
-                } catch (err) {
-                    console.error("⚠ Errore updateRankRoles in messageCreate:", err);
-                }
-            }
-        }
-    }
+    // Nessun XP qui: XP viene dato dal loop a tempo mentre giocano a DayZ
 
     // Gestione AI nei canali AI_SESSION
     if (isAI) {
@@ -1429,6 +1513,7 @@ client.once("ready", async () => {
 
     await registerCommands();
     startAiSessionCleanupLoop(client);
+    startXpWhilePlayingLoop(client);
     await ensureRulesMessage(client);
 });
 
