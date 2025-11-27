@@ -493,17 +493,18 @@ async function getOrCreateTextChannel(guild, name, parentCategory) {
 // TICKET HELPERS
 // ------------------------------------------------------------
 
-async function createTicketChannel(guild, user) {
+async function createTicketChannel(guild, user, typeLabel = "Supporto generale") {
     const catSupport = await getOrCreateCategory(guild, SUPPORT_CATEGORY_NAME);
-    const baseName = `ticket-${user.username}`.toLowerCase().replace(/[^a-z0-9\-]/g, "");
+    const baseNameUser = user.username.toLowerCase().replace(/[^a-z0-9\-]/g, "");
+    const baseNameType = typeLabel.toLowerCase().split(" ")[0].replace(/[^a-z0-9\-]/g, "");
     const uniqueId = user.id.slice(-4);
-    const channelName = `${baseName}-${uniqueId}`;
+    const channelName = `ticket-${baseNameType}-${baseNameUser}-${uniqueId}`;
 
     const channel = await guild.channels.create({
         name: channelName,
         type: ChannelType.GuildText,
         parent: catSupport.id,
-        topic: `Ticket aperto da USERID: ${user.id}`,
+        topic: `Ticket (${typeLabel}) aperto da USERID: ${user.id}`,
         permissionOverwrites: [
             {
                 id: guild.roles.everyone.id,
@@ -530,6 +531,7 @@ async function createTicketChannel(guild, user) {
     await channel.send({
         content: `
 🎫 **Nuovo ticket aperto da <@${user.id}>**
+📂 **Tipo:** ${typeLabel}
 
 🇮🇹 Scrivi qui il tuo problema, domanda o segnalazione.  
 🇬🇧 Write here your issue, question or report.
@@ -618,6 +620,12 @@ const commands = [
     new SlashCommandBuilder()
         .setName("ticket")
         .setDescription("Apri un ticket con lo staff"),
+
+    // 👉 NUOVO: Pannello ticket
+    new SlashCommandBuilder()
+        .setName("ticket-panel")
+        .setDescription("Invia un pannello con pulsanti per aprire ticket (solo staff)")
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
     new SlashCommandBuilder()
         .setName("ai")
@@ -931,10 +939,61 @@ client.on("interactionCreate", async interaction => {
 
         // ---------------- ticket ----------------
         if (commandName === "ticket") {
-            const channel = await createTicketChannel(interaction.guild, interaction.user);
+            const channel = await createTicketChannel(interaction.guild, interaction.user, "Supporto generale");
             return interaction.reply({
                 content: `📩 Ticket creato: ${channel}`,
                 ephemeral: true
+            });
+        }
+
+        // ---------------- ticket-panel ----------------
+        if (commandName === "ticket-panel") {
+            const embed = new EmbedBuilder()
+                .setTitle("🎟️ Apertura Ticket – 69x Pacific Land")
+                .setDescription(
+                    "Seleziona il tipo di ticket che vuoi aprire:\n\n" +
+                    "🧰 **Supporto generale** – Domande generiche, aiuto, info.\n" +
+                    "🛠 **Bug / Problema tecnico** – Errori, crash, problemi tecnici.\n" +
+                    "🚨 **Segnalazione giocatore / comportamento** – Cheater, insulti, comportamenti tossici.\n" +
+                    "💡 **Richiesta / Suggestion** – Idee, miglioramenti, feedback.\n" +
+                    "⚖️ **Ban & Appeal** – Informazioni sui ban, richieste di unban.\n"
+                )
+                .setColor("Orange");
+
+            const row1 = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId("ticket_open_general")
+                    .setLabel("🧰 Supporto generale")
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId("ticket_open_bug")
+                    .setLabel("🛠 Bug / Problema tecnico")
+                    .setStyle(ButtonStyle.Danger),
+                new ButtonBuilder()
+                    .setCustomId("ticket_open_report")
+                    .setLabel("🚨 Segnalazione player")
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+            const row2 = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId("ticket_open_suggest")
+                    .setLabel("💡 Richiesta / Suggestion")
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId("ticket_open_ban")
+                    .setLabel("⚖️ Ban & Appeal")
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+            await interaction.reply({
+                content: "📌 Pannello ticket creato in questo canale.",
+                ephemeral: true
+            });
+
+            await interaction.channel.send({
+                embeds: [embed],
+                components: [row1, row2]
             });
         }
 
@@ -1212,6 +1271,30 @@ client.on("interactionCreate", async interaction => {
             });
         }
 
+        // ---------------- Apertura ticket dal pannello ----------------
+        if (id.startsWith("ticket_open_")) {
+            let typeLabel = "Supporto generale";
+
+            if (id === "ticket_open_general") {
+                typeLabel = "Supporto generale";
+            } else if (id === "ticket_open_bug") {
+                typeLabel = "Bug / Problema tecnico";
+            } else if (id === "ticket_open_report") {
+                typeLabel = "Segnalazione giocatore / comportamento";
+            } else if (id === "ticket_open_suggest") {
+                typeLabel = "Richiesta / Suggestion";
+            } else if (id === "ticket_open_ban") {
+                typeLabel = "Ban & Appeal";
+            }
+
+            const channel = await createTicketChannel(interaction.guild, interaction.user, typeLabel);
+
+            return interaction.reply({
+                content: `📩 Ticket **${typeLabel}** creato: ${channel}`,
+                ephemeral: true
+            });
+        }
+
         // Ticket – chiudi → ARCHIVIA PRIVATO
         if (id === "ticket_close") {
             const channel = interaction.channel;
@@ -1228,27 +1311,23 @@ client.on("interactionCreate", async interaction => {
                 : `closed-${channel.name}`;
 
             try {
-                // sposta nella categoria archivio (se valida)
                 if (closedCategory) {
                     await channel.setParent(closedCategory.id, { lockPermissions: false });
                 }
 
                 await channel.setName(newName);
 
-                // tutti fuori
                 await channel.permissionOverwrites.edit(guild.roles.everyone, {
                     ViewChannel: false,
                     SendMessages: false
                 });
 
-                // utente del ticket → solo lettura
                 await channel.permissionOverwrites.edit(interaction.user.id, {
                     ViewChannel: true,
                     SendMessages: false,
                     ReadMessageHistory: true
                 });
 
-                // staff (ruoli allowed) → accesso completo
                 for (const roleId of botPermissions.allowedRoles) {
                     await channel.permissionOverwrites.edit(roleId, {
                         ViewChannel: true,
@@ -1257,7 +1336,6 @@ client.on("interactionCreate", async interaction => {
                     }).catch(() => {});
                 }
 
-                // disattiva il pulsante sul messaggio
                 try {
                     await interaction.message.edit({ components: [] });
                 } catch (e) {}
