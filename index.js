@@ -786,7 +786,7 @@ async function ensureRulesMessage(client) {
             .setTitle("📕 Rules / Regolamento – 69x Pacific Land (Full PvP)")
             .setDescription(
                 "➡️ Premi il pulsante qui sotto per accettare le regole ed entrare nel server.\n" +
-                "➡️ Click the button below to **accept the rules** and enter the server."
+                "➡️ Click the button below to **accept the rules** and enter the server." +
                 "🇮🇹 **REGOLE GENERALI**\n" +
                 "- Vietati cheat, exploit, macro, glitch.\n" +
                 "- Vietati insulti razziali, minacce reali e contenuti NSFW (ban diretto).\n" +
@@ -882,7 +882,7 @@ client.on("interactionCreate", async interaction => {
                 .setTitle("📕 Rules / Regolamento – 69x Pacific Land (Full PvP)")
                 .setDescription(
                     "➡️ Premi il pulsante qui sotto per accettare le regole ed entrare nel server.\n" +
-                    "➡️ Click the button below to **accept the rules** and enter the server."
+                    "➡️ Click the button below to **accept the rules** and enter the server." +
                     "🇮🇹 **REGOLE GENERALI**\n" +
                     "- Vietati cheat, exploit, macro, glitch.\n" +
                     "- Vietati insulti razziali, minacce reali e contenuti NSFW (ban diretto).\n" +
