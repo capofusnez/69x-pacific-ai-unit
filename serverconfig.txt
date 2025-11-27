@@ -1,0 +1,11 @@
+{
+  "name": "69x Pacific Land | Sakhal Full PvP",
+  "ip": "123.123.123.123",
+  "port": "2302",
+  "slots": 60,
+  "wipe": "Ogni 30 giorni",
+  "restart": "Ogni 4 ore",
+  "mods": "Trader, Custom Loot, Vehicles, Custom AI",
+  "style": "Full PvP - Hardcore Survival",
+  "discord": "Discord Ufficiale 69x Pacific Land"
+}
