@@ -785,6 +785,8 @@ async function ensureRulesMessage(client) {
         const embed = new EmbedBuilder()
             .setTitle("📕 Rules / Regolamento – 69x Pacific Land (Full PvP)")
             .setDescription(
+                "➡️ Premi il pulsante qui sotto per accettare le regole ed entrare nel server.\n" +
+                "➡️ Click the button below to **accept the rules** and enter the server."
                 "🇮🇹 **REGOLE GENERALI**\n" +
                 "- Vietati cheat, exploit, macro, glitch.\n" +
                 "- Vietati insulti razziali, minacce reali e contenuti NSFW (ban diretto).\n" +
@@ -819,8 +821,7 @@ async function ensureRulesMessage(client) {
                 "- No blocking roads or trolling with vehicles.\n\n" +
                 "👥 **Staff**\n" +
                 "- Staff always has the final word on rules.\n\n" +
-                "➡️ Premi il pulsante qui sotto per accettare le regole ed entrare nel server.\n" +
-                "➡️ Click the button below to **accept the rules** and enter the server."
+                
             )
             .setColor("Red");
 
@@ -880,6 +881,8 @@ client.on("interactionCreate", async interaction => {
             const embed = new EmbedBuilder()
                 .setTitle("📕 Rules / Regolamento – 69x Pacific Land (Full PvP)")
                 .setDescription(
+                    "➡️ Premi il pulsante qui sotto per accettare le regole ed entrare nel server.\n" +
+                    "➡️ Click the button below to **accept the rules** and enter the server."
                     "🇮🇹 **REGOLE GENERALI**\n" +
                     "- Vietati cheat, exploit, macro, glitch.\n" +
                     "- Vietati insulti razziali, minacce reali e contenuti NSFW (ban diretto).\n" +
@@ -914,8 +917,7 @@ client.on("interactionCreate", async interaction => {
                     "- No blocking roads or trolling with vehicles.\n\n" +
                     "👥 **Staff**\n" +
                     "- Staff always has the final word on rules.\n\n" +
-                    "➡️ Premi il pulsante qui sotto per accettare le regole ed entrare nel server.\n" +
-                    "➡️ Click the button below to **accept the rules** and enter the server."
+
                 )
                 .setColor("Red");
 
@@ -1176,45 +1178,66 @@ client.on("interactionCreate", async interaction => {
     // --------------------------------------------------------
     // BUTTONS
     // --------------------------------------------------------
-    if (interaction.isButton()) {
-        const id = interaction.customId;
+if (interaction.isButton()) {
+    const id = interaction.customId;
 
-        // Bottone "ACCETTO LE REGOLE"
-        if (id === "rules_accept_button") {
-            const member = interaction.member;
+    // Bottone "ACCETTO LE REGOLE"
+    if (id === "rules_accept_button") {
+        const member = interaction.member;
 
-            let freshRoleId = FRESH_SPAWN_ROLE_ID;
-            const freshRank = RANK_ROLES.find(r => r.name === "Fresh Spawn");
-            if (freshRank && freshRank.roleId) {
-                freshRoleId = freshRank.roleId;
-            }
+        // Ottieni tutti i ruoli XP definiti nella logica
+        const xpRoles = RANK_ROLES.map(r => r.roleId).filter(Boolean);
 
-            const role = interaction.guild.roles.cache.get(freshRoleId);
-            if (!role) {
-                return interaction.reply({
-                    content: "⚠ Errore: ruolo Fresh Spawn non trovato. Avvisa lo staff.",
-                    ephemeral: true
-                });
-            }
+        // Fresh Spawn è sempre il primo nella lista ruoli XP
+        const freshRole = xpRoles[0];
+        const userRoles = member.roles.cache.map(r => r.id);
 
-            if (member.roles.cache.has(role.id)) {
-                return interaction.reply({
-                    content: "Hai già accettato le regole e sei dentro, sopravvissuto 😏",
-                    ephemeral: true
-                });
-            }
+        // Controllo se l’utente ha un ruolo superiore a Fresh Spawn
+        const hasHigherRank = xpRoles.slice(1).some(r => userRoles.includes(r));
 
-            await member.roles.add(role, "Accettate le regole");
-
+        if (hasHigherRank) {
             return interaction.reply({
-                content:
-                    "💀 **Benvenuto su 69x Pacific Land | Sakhal!**\n" +
-                    "Se muori fa parte dell'esperienza.\n" +
-                    "Se inizi a lamentarti... beh, il ban è sempre un'opzione 😂\n\n" +
-                    "Ora hai accesso al server. Buona fortuna, ne avrai bisogno.",
-                ephemeral: true
+                content: 
+                    "🛡 Hai già un rango più alto — non serve premere di nuovo.\n\n" +
+                    "🛡 You already have a higher rank — no need to press again.",
+                flags: 64 // sostituisce ephemeral
             });
         }
+
+        // Se l’utente ha già Fresh Spawn → non fare nulla
+        if (userRoles.includes(freshRole)) {
+            return interaction.reply({
+                content: 
+                    "✔ Hai già accettato le regole.\n" +
+                    "✔ You already accepted the rules.",
+                flags: 64
+            });
+        }
+
+        // Assegna Fresh Spawn
+        try {
+            await member.roles.add(freshRole, "Ha accettato le regole");
+        } catch (err) {
+            return interaction.reply({
+                content: 
+                    "⚠ Errore durante l'assegnazione del ruolo. Avvisa lo staff.\n" +
+                    "⚠ Error assigning role. Contact staff.",
+                flags: 64
+            });
+        }
+
+        // Messaggio finale di conferma
+        return interaction.reply({
+            content: 
+                "🔥 Benvenuto sopravvissuto — ora sei un **Fresh Spawn**.\n" +
+                "Ricorda: nessuno verrà a salvarti.\n\n" +
+                "🔥 Welcome survivor — you are now a **Fresh Spawn**.\n" +
+                "Remember: no one is coming to save you.",
+            flags: 64
+        });
+    }
+}
+
 
         // XP – Mostra i miei XP
         if (id === "xp_show_button") {
