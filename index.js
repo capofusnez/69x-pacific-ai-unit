@@ -1245,8 +1245,8 @@ client.on("messageCreate", async message => {
     // XP solo in canali normali (no ticket, no AI) E solo se sta giocando a DayZ
     if (!isTicket && !isAI && member) {
         if (isPlayingDayZ(member)) {
-            const res = addXP(guildId, userId, 2);
-            const beforeLevel = getLevelInfo(res.xp - 2).level;
+            const res = addXP(guildId, userId, 0);
+            const beforeLevel = getLevelInfo(res.xp 0).level;
             if (res.newLevel > beforeLevel) {
                 try {
                     const guildMember = await message.guild.members.fetch(userId);
