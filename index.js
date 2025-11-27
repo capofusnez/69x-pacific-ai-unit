@@ -103,8 +103,8 @@ const {
 const CLIENT_ID = "1442475115743940611";
 const SERVER_ID = "1442125105575628891";
 
-const RULES_CHANNEL_ID = null; // opzionale se vuoi usare ID fisso
-const RULES_CHANNEL_NAME = "📜│rules";
+const RULES_CHANNEL_ID = "1442141514464759868"; // opzionale se vuoi usare ID fisso
+const RULES_CHANNEL_NAME = "📜┃regole・rules";
 
 const NEW_USER_CHANNEL_ID = "1442568117296562266"; // se ti serve per future welcome
 
