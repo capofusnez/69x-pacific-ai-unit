@@ -1,4 +1,4 @@
-// V 1.7 beta - 69x Pacific AI Unit
+// V 1.8 beta - 69x Pacific AI Unit
 // Bot Discord per 69x Pacific Land | Sakhal
 
 require("dotenv").config();
@@ -101,6 +101,8 @@ const SERVER_ID = process.env.SERVER_ID || "1442125105575628891";
 
 const RULES_CHANNEL_ID = process.env.RULES_CHANNEL_ID || "1442141514464759868";
 const RULES_CHANNEL_NAME = "📜│rules";
+
+const NEW_USER_CHANNEL_ID = process.env.WELCOME_CHANNEL_ID || "1442568117296562266";
 
 const SUPPORT_CATEGORY_NAME = "🆘 Supporto • Support";
 const AI_CATEGORY_NAME = "🤖 AI Sessions";
@@ -528,7 +530,7 @@ async function getOrCreateTextChannel(guild, name, parentCategory) {
 // TICKET HELPERS
 // ------------------------------------------------------------
 
-async function createTicketChannel(guild, user) {
+async function createTicketChannel(guild, user, ticketType) {
     const catSupport = await getOrCreateCategory(guild, SUPPORT_CATEGORY_NAME);
     const baseName = `ticket-${user.username}`.toLowerCase().replace(/[^a-z0-9\-]/g, "");
     const uniqueId = user.id.slice(-4);
@@ -538,7 +540,7 @@ async function createTicketChannel(guild, user) {
         name: channelName,
         type: ChannelType.GuildText,
         parent: catSupport.id,
-        topic: `Ticket aperto da USERID: ${user.id}`,
+        topic: `Ticket aperto da USERID: ${user.id} | Tipo: ${ticketType || "Generico"}`,
         permissionOverwrites: [
             {
                 id: guild.roles.everyone.id,
@@ -565,6 +567,8 @@ async function createTicketChannel(guild, user) {
     await channel.send({
         content: `
 🎫 **Nuovo ticket aperto da <@${user.id}>**
+
+📂 Tipo: ${ticketType || "🧰 Supporto generale / General support"}
 
 🇮🇹 Scrivi qui il tuo problema, domanda o segnalazione.  
 🇬🇧 Write here your issue, question or report.
@@ -650,9 +654,16 @@ const commands = [
         .setDescription("Crea/organizza categorie base (Supporto + AI) (solo admin)")
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
+    // Pannello ticket con bottoni
+    new SlashCommandBuilder()
+        .setName("ticket-panel")
+        .setDescription("Crea il pannello per aprire i ticket (bottoni)")
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+
+    // Ticket rapido /ticket
     new SlashCommandBuilder()
         .setName("ticket")
-        .setDescription("Apri un ticket con lo staff"),
+        .setDescription("Apri un ticket di supporto generale con lo staff"),
 
     new SlashCommandBuilder()
         .setName("ai")
@@ -984,9 +995,60 @@ client.on("interactionCreate", async interaction => {
             });
         }
 
-        // ---------------- ticket ----------------
+        // ---------------- ticket-panel ----------------
+        if (commandName === "ticket-panel") {
+            const embed = new EmbedBuilder()
+                .setTitle("🧾 Pannello Ticket – 69x Pacific Land")
+                .setDescription(
+                    "Scegli il tipo di ticket che vuoi aprire:\n\n" +
+                    "🧰 **Supporto generale**\n" +
+                    "🛠 **Bug / Problema tecnico**\n" +
+                    "🚨 **Segnalazione giocatore / comportamento**\n" +
+                    "💡 **Richiesta / Suggestion**\n" +
+                    "⚖️ **Ban & Appeal**\n\n" +
+                    "🇮🇹 Clicca il pulsante qui sotto.\n" +
+                    "🇬🇧 Click the button below."
+                )
+                .setColor("DarkGreen");
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId("ticket_general")
+                    .setLabel("🧰 Supporto generale")
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId("ticket_bug")
+                    .setLabel("🛠 Bug / Problema tecnico")
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId("ticket_report")
+                    .setLabel("🚨 Segnalazione player")
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId("ticket_suggestion")
+                    .setLabel("💡 Richiesta / Suggestion")
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId("ticket_ban")
+                    .setLabel("⚖️ Ban & Appeal")
+                    .setStyle(ButtonStyle.Primary)
+            );
+
+            await interaction.reply({
+                content: "✅ Pannello ticket creato in questo canale.",
+                ephemeral: true
+            });
+
+            await interaction.channel.send({ embeds: [embed], components: [row] });
+        }
+
+        // ---------------- ticket (rapido) ----------------
         if (commandName === "ticket") {
-            const channel = await createTicketChannel(interaction.guild, interaction.user);
+            const channel = await createTicketChannel(
+                interaction.guild,
+                interaction.user,
+                "🧰 Supporto generale / General support"
+            );
             return interaction.reply({
                 content: `📩 Ticket creato: ${channel}`,
                 ephemeral: true
@@ -1203,7 +1265,7 @@ client.on("interactionCreate", async interaction => {
             if (action === "set") {
                 if (value === null) {
                     return interaction.reply({
-                        content: "⚠ Devi specificare un valore numerico per `valore`.",
+                        content: "⚠ Devi specificare un valore numerico per \`valore\`.",
                         ephemeral: true
                     });
                 }
@@ -1288,6 +1350,67 @@ client.on("interactionCreate", async interaction => {
                     "Ricorda: nessuno verrà a salvarti.\n\n" +
                     "🔥 Welcome survivor — you are now a **Fresh Spawn**.\n" +
                     "Remember: no one is coming to save you.",
+                ephemeral: true
+            });
+        }
+
+        // Bottoni pannello ticket
+        if (id === "ticket_general") {
+            const ch = await createTicketChannel(
+                interaction.guild,
+                interaction.user,
+                "🧰 Supporto generale"
+            );
+            return interaction.reply({
+                content: `📩 Ticket (supporto generale) creato: ${ch}`,
+                ephemeral: true
+            });
+        }
+
+        if (id === "ticket_bug") {
+            const ch = await createTicketChannel(
+                interaction.guild,
+                interaction.user,
+                "🛠 Bug / Problema tecnico"
+            );
+            return interaction.reply({
+                content: `📩 Ticket (bug / problema tecnico) creato: ${ch}`,
+                ephemeral: true
+            });
+        }
+
+        if (id === "ticket_report") {
+            const ch = await createTicketChannel(
+                interaction.guild,
+                interaction.user,
+                "🚨 Segnalazione giocatore / comportamento"
+            );
+            return interaction.reply({
+                content: `📩 Ticket (segnalazione giocatore) creato: ${ch}`,
+                ephemeral: true
+            });
+        }
+
+        if (id === "ticket_suggestion") {
+            const ch = await createTicketChannel(
+                interaction.guild,
+                interaction.user,
+                "💡 Richiesta / Suggestion"
+            );
+            return interaction.reply({
+                content: `📩 Ticket (suggestion) creato: ${ch}`,
+                ephemeral: true
+            });
+        }
+
+        if (id === "ticket_ban") {
+            const ch = await createTicketChannel(
+                interaction.guild,
+                interaction.user,
+                "⚖️ Ban & Appeal"
+            );
+            return interaction.reply({
+                content: `📩 Ticket (ban & appeal) creato: ${ch}`,
                 ephemeral: true
             });
         }
@@ -1422,6 +1545,44 @@ client.on("messageCreate", async message => {
             console.error("⚠ Errore AI:", err);
             await message.channel.send(getAiUnavailableMessage()).catch(() => {});
         }
+    }
+});
+
+// ------------------------------------------------------------
+// ANNUNCIO NUOVI UTENTI
+// ------------------------------------------------------------
+
+client.on("guildMemberAdd", async member => {
+    try {
+        const guild = member.guild;
+        let channel =
+            guild.channels.cache.get(NEW_USER_CHANNEL_ID) ||
+            guild.channels.cache.find(
+                c => c.type === ChannelType.GuildText && c.name.toLowerCase().includes("nuovi")
+            );
+
+        if (!channel) {
+            console.log("⚠ Canale nuovi utenti non trovato, nessun annuncio.");
+            return;
+        }
+
+        const rulesChannelMention = RULES_CHANNEL_ID
+            ? `<#${RULES_CHANNEL_ID}>`
+            : RULES_CHANNEL_NAME;
+
+        const embed = new EmbedBuilder()
+            .setTitle("👣 Nuovo sopravvissuto è sbarcato su Sakhal")
+            .setDescription(
+                `🇮🇹 Benvenuto ${member} su **69x Pacific Land | Sakhal**!\n` +
+                `Passa da ${rulesChannelMention} per leggere e accettare le regole e ottenere il rango **Fresh Spawn**.\n\n` +
+                `🇬🇧 Welcome ${member} to **69x Pacific Land | Sakhal**!\n` +
+                `Check ${rulesChannelMention} to read and accept the rules and get your **Fresh Spawn** rank.`
+            )
+            .setColor("Orange");
+
+        await channel.send({ embeds: [embed] });
+    } catch (err) {
+        console.error("⚠ Errore nell'annunciare un nuovo utente:", err);
     }
 });
 
