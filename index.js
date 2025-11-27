@@ -1,4 +1,4 @@
-// V 1.8 beta - 69x Pacific AI Unit
+// V 1.7 beta - 69x Pacific AI Unit
 // Bot Discord per 69x Pacific Land | Sakhal
 
 require("dotenv").config();
@@ -102,10 +102,15 @@ const SERVER_ID = process.env.SERVER_ID || "1442125105575628891";
 const RULES_CHANNEL_ID = process.env.RULES_CHANNEL_ID || "1442141514464759868";
 const RULES_CHANNEL_NAME = "📜│rules";
 
+// canale nuovi utenti (annuncio quando accettano le regole)
 const NEW_USER_CHANNEL_ID = process.env.WELCOME_CHANNEL_ID || "1442568117296562266";
 
+// categoria supporto
 const SUPPORT_CATEGORY_NAME = "🆘 Supporto • Support";
+// categoria canali AI
 const AI_CATEGORY_NAME = "🤖 AI Sessions";
+// categoria archivio ticket chiusi
+const CLOSED_TICKETS_CATEGORY_ID = "1443351281145086144";
 
 const SERVER_CONFIG_FILE = path.join(__dirname, "serverconfig.json");
 const LEVELS_FILE = path.join(__dirname, "levels.json");
@@ -113,46 +118,8 @@ const AI_SESSIONS_FILE = path.join(__dirname, "ai_sessions.json");
 const PERMISSIONS_FILE = path.join(__dirname, "permissions.json");
 const RULES_MESSAGE_FILE = path.join(__dirname, "rules_message.json");
 
-// 🔹 Nuovo file per configurazione chat (messaggi corti)
-const CHAT_CONFIG_FILE = path.join(__dirname, "chatconfig.json");
-
 const AI_SESSION_TIMEOUT_MINUTES = 30;
 const AI_SESSION_TIMEOUT_MS = AI_SESSION_TIMEOUT_MINUTES * 60 * 1000;
-
-// ------------------------------------------------------------
-// CONFIG CHAT (chatconfig.json) – lunghezza minima messaggi
-// ------------------------------------------------------------
-
-let chatConfig = {
-    shortMinLength: 5 // default, modificabile da comando
-};
-
-function loadChatConfig() {
-    try {
-        if (fs.existsSync(CHAT_CONFIG_FILE)) {
-            const raw = fs.readFileSync(CHAT_CONFIG_FILE, "utf8");
-            chatConfig = JSON.parse(raw);
-        } else {
-            saveChatConfig();
-        }
-        console.log("💬 Config chat caricata:", chatConfig);
-    } catch (err) {
-        console.error("⚠ Errore caricando chatconfig.json:", err);
-        chatConfig = { shortMinLength: 5 };
-        saveChatConfig();
-    }
-}
-
-function saveChatConfig() {
-    try {
-        fs.writeFileSync(CHAT_CONFIG_FILE, JSON.stringify(chatConfig, null, 2), "utf8");
-        console.log("💾 chatconfig.json salvato.");
-    } catch (err) {
-        console.error("⚠ Errore salvando chatconfig.json:", err);
-    }
-}
-
-loadChatConfig();
 
 // ------------------------------------------------------------
 // CONFIG SERVER (serverconfig.json)
@@ -471,7 +438,7 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildPresences // 👈 per vedere se giocano a DayZ
+        GatewayIntentBits.GuildPresences // per vedere se giocano a DayZ
     ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
@@ -530,7 +497,7 @@ async function getOrCreateTextChannel(guild, name, parentCategory) {
 // TICKET HELPERS
 // ------------------------------------------------------------
 
-async function createTicketChannel(guild, user, ticketType) {
+async function createTicketChannel(guild, user) {
     const catSupport = await getOrCreateCategory(guild, SUPPORT_CATEGORY_NAME);
     const baseName = `ticket-${user.username}`.toLowerCase().replace(/[^a-z0-9\-]/g, "");
     const uniqueId = user.id.slice(-4);
@@ -540,7 +507,7 @@ async function createTicketChannel(guild, user, ticketType) {
         name: channelName,
         type: ChannelType.GuildText,
         parent: catSupport.id,
-        topic: `Ticket aperto da USERID: ${user.id} | Tipo: ${ticketType || "Generico"}`,
+        topic: `Ticket aperto da USERID: ${user.id}`,
         permissionOverwrites: [
             {
                 id: guild.roles.everyone.id,
@@ -567,8 +534,6 @@ async function createTicketChannel(guild, user, ticketType) {
     await channel.send({
         content: `
 🎫 **Nuovo ticket aperto da <@${user.id}>**
-
-📂 Tipo: ${ticketType || "🧰 Supporto generale / General support"}
 
 🇮🇹 Scrivi qui il tuo problema, domanda o segnalazione.  
 🇬🇧 Write here your issue, question or report.
@@ -654,16 +619,9 @@ const commands = [
         .setDescription("Crea/organizza categorie base (Supporto + AI) (solo admin)")
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    // Pannello ticket con bottoni
-    new SlashCommandBuilder()
-        .setName("ticket-panel")
-        .setDescription("Crea il pannello per aprire i ticket (bottoni)")
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
-
-    // Ticket rapido /ticket
     new SlashCommandBuilder()
         .setName("ticket")
-        .setDescription("Apri un ticket di supporto generale con lo staff"),
+        .setDescription("Apri un ticket con lo staff"),
 
     new SlashCommandBuilder()
         .setName("ai")
@@ -744,27 +702,7 @@ const commands = [
     new SlashCommandBuilder()
         .setName("perm-list")
         .setDescription("Mostra quali ruoli sono autorizzati ai comandi del bot")
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
-
-    // 🔹 NUOVO: gestione messaggi corti
-    new SlashCommandBuilder()
-        .setName("chat-short")
-        .setDescription("Mostra o imposta la lunghezza minima dei messaggi (anti spam)")
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-        .addStringOption(opt =>
-            opt.setName("azione")
-               .setDescription("Scegli se leggere o impostare")
-               .setRequired(true)
-               .addChoices(
-                   { name: "Mostra valore attuale", value: "get" },
-                   { name: "Imposta nuovo valore", value: "set" }
-               )
-        )
-        .addIntegerOption(opt =>
-            opt.setName("valore")
-               .setDescription("Nuova lunghezza minima (2 - 200 caratteri)")
-               .setRequired(false)
-        )
 ];
 
 // ------------------------------------------------------------
@@ -995,60 +933,9 @@ client.on("interactionCreate", async interaction => {
             });
         }
 
-        // ---------------- ticket-panel ----------------
-        if (commandName === "ticket-panel") {
-            const embed = new EmbedBuilder()
-                .setTitle("🧾 Pannello Ticket – 69x Pacific Land")
-                .setDescription(
-                    "Scegli il tipo di ticket che vuoi aprire:\n\n" +
-                    "🧰 **Supporto generale**\n" +
-                    "🛠 **Bug / Problema tecnico**\n" +
-                    "🚨 **Segnalazione giocatore / comportamento**\n" +
-                    "💡 **Richiesta / Suggestion**\n" +
-                    "⚖️ **Ban & Appeal**\n\n" +
-                    "🇮🇹 Clicca il pulsante qui sotto.\n" +
-                    "🇬🇧 Click the button below."
-                )
-                .setColor("DarkGreen");
-
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId("ticket_general")
-                    .setLabel("🧰 Supporto generale")
-                    .setStyle(ButtonStyle.Primary),
-                new ButtonBuilder()
-                    .setCustomId("ticket_bug")
-                    .setLabel("🛠 Bug / Problema tecnico")
-                    .setStyle(ButtonStyle.Primary),
-                new ButtonBuilder()
-                    .setCustomId("ticket_report")
-                    .setLabel("🚨 Segnalazione player")
-                    .setStyle(ButtonStyle.Primary),
-                new ButtonBuilder()
-                    .setCustomId("ticket_suggestion")
-                    .setLabel("💡 Richiesta / Suggestion")
-                    .setStyle(ButtonStyle.Primary),
-                new ButtonBuilder()
-                    .setCustomId("ticket_ban")
-                    .setLabel("⚖️ Ban & Appeal")
-                    .setStyle(ButtonStyle.Primary)
-            );
-
-            await interaction.reply({
-                content: "✅ Pannello ticket creato in questo canale.",
-                ephemeral: true
-            });
-
-            await interaction.channel.send({ embeds: [embed], components: [row] });
-        }
-
-        // ---------------- ticket (rapido) ----------------
+        // ---------------- ticket ----------------
         if (commandName === "ticket") {
-            const channel = await createTicketChannel(
-                interaction.guild,
-                interaction.user,
-                "🧰 Supporto generale / General support"
-            );
+            const channel = await createTicketChannel(interaction.guild, interaction.user);
             return interaction.reply({
                 content: `📩 Ticket creato: ${channel}`,
                 ephemeral: true
@@ -1247,45 +1134,6 @@ client.on("interactionCreate", async interaction => {
                 ephemeral: true
             });
         }
-
-        // ---------------- chat-short ----------------
-        if (commandName === "chat-short") {
-            const action = interaction.options.getString("azione", true); // "get" | "set"
-            const value = interaction.options.getInteger("valore");
-
-            if (action === "get") {
-                return interaction.reply({
-                    content:
-                        `💬 Lunghezza minima messaggi attuale: **${chatConfig.shortMinLength}** caratteri.\n` +
-                        `Messaggi più corti (senza allegati) vengono rimossi automaticamente.`,
-                    ephemeral: true
-                });
-            }
-
-            if (action === "set") {
-                if (value === null) {
-                    return interaction.reply({
-                        content: "⚠ Devi specificare un valore numerico per \`valore\`.",
-                        ephemeral: true
-                    });
-                }
-
-                if (value < 2 || value > 200) {
-                    return interaction.reply({
-                        content: "⚠ Il valore deve essere compreso tra **2** e **200** caratteri.",
-                        ephemeral: true
-                    });
-                }
-
-                chatConfig.shortMinLength = value;
-                saveChatConfig();
-
-                return interaction.reply({
-                    content: `✅ Lunghezza minima messaggi aggiornata a **${value}** caratteri.`,
-                    ephemeral: true
-                });
-            }
-        }
     }
 
     // --------------------------------------------------------
@@ -1344,73 +1192,36 @@ client.on("interactionCreate", async interaction => {
                 });
             }
 
+            // 🔔 Annuncio nel canale nuovi utenti
+            try {
+                const guild = interaction.guild;
+                let newUserChannel = null;
+
+                if (NEW_USER_CHANNEL_ID) {
+                    newUserChannel = guild.channels.cache.get(NEW_USER_CHANNEL_ID)
+                        || await guild.channels.fetch(NEW_USER_CHANNEL_ID).catch(() => null);
+                }
+
+                if (newUserChannel && newUserChannel.type === ChannelType.GuildText) {
+                    await newUserChannel.send(
+                        `🎉 **Nuovo sopravvissuto è atterrato su Sakhal!**\n` +
+                        `Benvenuto <@${member.id}> su **69x Pacific Land | Full PvP**.\n\n` +
+                        `🎉 **New survivor just joined Sakhal!**\n` +
+                        `Welcome <@${member.id}> to **69x Pacific Land | Full PvP**.`
+                    );
+                } else {
+                    console.log("⚠ Canale nuovi utenti non trovato o non è testuale.");
+                }
+            } catch (err) {
+                console.error("⚠ Errore inviando annuncio nuovi utenti:", err);
+            }
+
             return interaction.reply({
                 content:
                     "🔥 Benvenuto sopravvissuto — ora sei un **Fresh Spawn**.\n" +
                     "Ricorda: nessuno verrà a salvarti.\n\n" +
                     "🔥 Welcome survivor — you are now a **Fresh Spawn**.\n" +
                     "Remember: no one is coming to save you.",
-                ephemeral: true
-            });
-        }
-
-        // Bottoni pannello ticket
-        if (id === "ticket_general") {
-            const ch = await createTicketChannel(
-                interaction.guild,
-                interaction.user,
-                "🧰 Supporto generale"
-            );
-            return interaction.reply({
-                content: `📩 Ticket (supporto generale) creato: ${ch}`,
-                ephemeral: true
-            });
-        }
-
-        if (id === "ticket_bug") {
-            const ch = await createTicketChannel(
-                interaction.guild,
-                interaction.user,
-                "🛠 Bug / Problema tecnico"
-            );
-            return interaction.reply({
-                content: `📩 Ticket (bug / problema tecnico) creato: ${ch}`,
-                ephemeral: true
-            });
-        }
-
-        if (id === "ticket_report") {
-            const ch = await createTicketChannel(
-                interaction.guild,
-                interaction.user,
-                "🚨 Segnalazione giocatore / comportamento"
-            );
-            return interaction.reply({
-                content: `📩 Ticket (segnalazione giocatore) creato: ${ch}`,
-                ephemeral: true
-            });
-        }
-
-        if (id === "ticket_suggestion") {
-            const ch = await createTicketChannel(
-                interaction.guild,
-                interaction.user,
-                "💡 Richiesta / Suggestion"
-            );
-            return interaction.reply({
-                content: `📩 Ticket (suggestion) creato: ${ch}`,
-                ephemeral: true
-            });
-        }
-
-        if (id === "ticket_ban") {
-            const ch = await createTicketChannel(
-                interaction.guild,
-                interaction.user,
-                "⚖️ Ban & Appeal"
-            );
-            return interaction.reply({
-                content: `📩 Ticket (ban & appeal) creato: ${ch}`,
                 ephemeral: true
             });
         }
@@ -1429,26 +1240,65 @@ client.on("interactionCreate", async interaction => {
             });
         }
 
-        // Ticket – chiudi
+        // Ticket – chiudi (sposta in archivio)
         if (id === "ticket_close") {
-            await interaction.reply({
-                content: "🔒 Ticket chiuso. Il canale verrà eliminato tra pochi secondi.",
-                ephemeral: false
-            });
+            const channel = interaction.channel;
+            const guild = interaction.guild;
 
-            setTimeout(async () => {
-                try {
-                    await interaction.channel.delete("Ticket chiuso");
-                } catch (err) {
-                    console.error("⚠ Errore cancellando ticket:", err);
+            // prendo categoria archivio ticket chiusi
+            let closedCategory = guild.channels.cache.get(CLOSED_TICKETS_CATEGORY_ID);
+            if (!closedCategory || closedCategory.type !== ChannelType.GuildCategory) {
+                console.log("⚠ CLOSED_TICKETS_CATEGORY_ID non valido o non è una categoria, il ticket non verrà spostato.");
+                closedCategory = null;
+            }
+
+            const newName = channel.name.startsWith("closed-")
+                ? channel.name
+                : `closed-${channel.name}`;
+
+            try {
+                if (closedCategory) {
+                    await channel.setParent(closedCategory.id, { lockPermissions: false });
                 }
-            }, 5000);
+
+                await channel.setName(newName);
+
+                // blocca scrittura per @everyone
+                await channel.permissionOverwrites.edit(guild.roles.everyone, {
+                    ViewChannel: true,
+                    SendMessages: false
+                });
+
+                // blocca scrittura per chi ha aperto il ticket (se vuoi)
+                await channel.permissionOverwrites.edit(interaction.user.id, {
+                    SendMessages: false
+                });
+
+                // rimuovi i bottoni dal messaggio del ticket
+                try {
+                    await interaction.message.edit({ components: [] });
+                } catch (e) {
+                    // non critico se fallisce
+                }
+
+                await interaction.reply({
+                    content: "🔒 Ticket chiuso e spostato in archivio. Nessuno può più scrivere qui.",
+                    ephemeral: false
+                });
+
+            } catch (err) {
+                console.error("⚠ Errore chiudendo/spostando il ticket:", err);
+                return interaction.reply({
+                    content: "⚠ C'è stato un errore nel chiudere questo ticket. Avvisa lo staff.",
+                    ephemeral: true
+                });
+            }
         }
     }
 });
 
 // ------------------------------------------------------------
-// MESSAGGI – filtro messaggi corti + XP (solo se sta giocando a DayZ) + AI
+// MESSAGGI – XP (solo se sta giocando a DayZ) + AI
 // ------------------------------------------------------------
 
 client.on("messageCreate", async message => {
@@ -1462,48 +1312,10 @@ client.on("messageCreate", async message => {
 
     const member = message.member;
 
-    // --------------------------------------------------------
-    // FILTRO MESSAGGI CORTI (anti spam)
-    // Non si applica a: ticket, AI, messaggi con allegati
-    // --------------------------------------------------------
-    const content = (message.content || "").trim();
-
-    if (
-        !isTicket &&
-        !isAI &&
-        member &&
-        content.length > 0 &&
-        content.length < chatConfig.shortMinLength &&
-        message.attachments.size === 0
-    ) {
-        try {
-            await message.delete();
-        } catch (err) {
-            console.error("⚠ Errore cancellando messaggio corto:", err);
-            return;
-        }
-
-        try {
-            const warn = await message.channel.send(
-                `💬 ${message.author}, i messaggi troppo corti vengono rimossi per evitare spam.`
-            );
-            setTimeout(() => {
-                warn.delete().catch(() => {});
-            }, 5000);
-        } catch (err) {
-            console.error("⚠ Errore inviando avviso messaggio corto:", err);
-        }
-
-        return; // niente XP / AI per questo messaggio
-    }
-
-    // --------------------------------------------------------
     // XP solo in canali normali (no ticket, no AI) E solo se sta giocando a DayZ
-    // (al momento XP per messaggi = 0, lasciato per futura riattivazione)
-    // --------------------------------------------------------
     if (!isTicket && !isAI && member) {
         if (isPlayingDayZ(member)) {
-            const res = addXP(guildId, userId, 0); // 0 = XP disattivati
+            const res = addXP(guildId, userId, 0); // al momento 0 XP automatici
             const beforeLevel = getLevelInfo(res.xp - 0).level;
             if (res.newLevel > beforeLevel) {
                 try {
@@ -1516,9 +1328,7 @@ client.on("messageCreate", async message => {
         }
     }
 
-    // --------------------------------------------------------
     // Gestione AI nei canali AI_SESSION
-    // --------------------------------------------------------
     if (isAI) {
         if (!aiSessions[message.channel.id]) {
             aiSessions[message.channel.id] = {
@@ -1545,44 +1355,6 @@ client.on("messageCreate", async message => {
             console.error("⚠ Errore AI:", err);
             await message.channel.send(getAiUnavailableMessage()).catch(() => {});
         }
-    }
-});
-
-// ------------------------------------------------------------
-// ANNUNCIO NUOVI UTENTI
-// ------------------------------------------------------------
-
-client.on("guildMemberAdd", async member => {
-    try {
-        const guild = member.guild;
-        let channel =
-            guild.channels.cache.get(NEW_USER_CHANNEL_ID) ||
-            guild.channels.cache.find(
-                c => c.type === ChannelType.GuildText && c.name.toLowerCase().includes("nuovi")
-            );
-
-        if (!channel) {
-            console.log("⚠ Canale nuovi utenti non trovato, nessun annuncio.");
-            return;
-        }
-
-        const rulesChannelMention = RULES_CHANNEL_ID
-            ? `<#${RULES_CHANNEL_ID}>`
-            : RULES_CHANNEL_NAME;
-
-        const embed = new EmbedBuilder()
-            .setTitle("👣 Nuovo sopravvissuto è sbarcato su Sakhal")
-            .setDescription(
-                `🇮🇹 Benvenuto ${member} su **69x Pacific Land | Sakhal**!\n` +
-                `Passa da ${rulesChannelMention} per leggere e accettare le regole e ottenere il rango **Fresh Spawn**.\n\n` +
-                `🇬🇧 Welcome ${member} to **69x Pacific Land | Sakhal**!\n` +
-                `Check ${rulesChannelMention} to read and accept the rules and get your **Fresh Spawn** rank.`
-            )
-            .setColor("Orange");
-
-        await channel.send({ embeds: [embed] });
-    } catch (err) {
-        console.error("⚠ Errore nell'annunciare un nuovo utente:", err);
     }
 });
 
