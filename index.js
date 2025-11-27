@@ -820,7 +820,7 @@ async function ensureRulesMessage(client) {
                 "- Vehicles left in safezone >24h may be removed.\n" +
                 "- No blocking roads or trolling with vehicles.\n\n" +
                 "👥 **Staff**\n" +
-                "- Staff always has the final word on rules.\n\n" +
+                "- Staff always has the final word on rules.\n\n" 
                 
             )
             .setColor("Red");
@@ -916,7 +916,7 @@ client.on("interactionCreate", async interaction => {
                     "- Vehicles left in safezone >24h may be removed.\n" +
                     "- No blocking roads or trolling with vehicles.\n\n" +
                     "👥 **Staff**\n" +
-                    "- Staff always has the final word on rules.\n\n" +
+                    "- Staff always has the final word on rules.\n\n" 
 
                 )
                 .setColor("Red");
