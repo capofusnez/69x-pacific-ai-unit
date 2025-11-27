@@ -1,4 +1,4 @@
-// V 1.5 beta - 69x Pacific AI Unit
+// V 1.6 beta - 69x Pacific AI Unit
 // Bot Discord per 69x Pacific Land | Sakhal
 
 require("dotenv").config();
@@ -99,7 +99,7 @@ const {
 const CLIENT_ID = process.env.CLIENT_ID || "1442475115743940611";
 const SERVER_ID = process.env.SERVER_ID || "1442125105575628891";
 
-const RULES_CHANNEL_ID = process.env.RULES_CHANNEL_ID || null;
+const RULES_CHANNEL_ID = process.env.RULES_CHANNEL_ID || "1442141514464759868";
 const RULES_CHANNEL_NAME = "📜│rules";
 
 const SUPPORT_CATEGORY_NAME = "🆘 Supporto • Support";
@@ -430,10 +430,28 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildPresences // 👈 per vedere se giocano a DayZ
     ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
+
+// ------------------------------------------------------------
+// HELPER: rileva se sta giocando a DayZ
+// ------------------------------------------------------------
+
+function isPlayingDayZ(member) {
+    const presence = member?.presence;
+    if (!presence || !presence.activities || presence.activities.length === 0) {
+        return false;
+    }
+
+    return presence.activities.some(a =>
+        a.type === ActivityType.Playing &&
+        a.name &&
+        a.name.toLowerCase().includes("dayz")
+    );
+}
 
 // ------------------------------------------------------------
 // HELPER CANALI/CATEGORIE
@@ -1210,7 +1228,7 @@ client.on("interactionCreate", async interaction => {
 });
 
 // ------------------------------------------------------------
-// MESSAGGI – XP + AI
+// MESSAGGI – XP (solo se sta giocando a DayZ) + AI
 // ------------------------------------------------------------
 
 client.on("messageCreate", async message => {
@@ -1222,16 +1240,20 @@ client.on("messageCreate", async message => {
     const isTicket = message.channel.name?.startsWith("ticket-");
     const isAI = message.channel.topic && message.channel.topic.includes("AI_SESSION");
 
-    // XP solo in canali normali
-    if (!isTicket && !isAI) {
-        const res = addXP(guildId, userId, 2);
-        const beforeLevel = getLevelInfo(res.xp - 2).level;
-        if (res.newLevel > beforeLevel) {
-            try {
-                const member = await message.guild.members.fetch(userId);
-                await updateRankRoles(message.guild, member, res.newLevel);
-            } catch (err) {
-                console.error("⚠ Errore updateRankRoles in messageCreate:", err);
+    const member = message.member;
+
+    // XP solo in canali normali (no ticket, no AI) E solo se sta giocando a DayZ
+    if (!isTicket && !isAI && member) {
+        if (isPlayingDayZ(member)) {
+            const res = addXP(guildId, userId, 2);
+            const beforeLevel = getLevelInfo(res.xp - 2).level;
+            if (res.newLevel > beforeLevel) {
+                try {
+                    const guildMember = await message.guild.members.fetch(userId);
+                    await updateRankRoles(message.guild, guildMember, res.newLevel);
+                } catch (err) {
+                    console.error("⚠ Errore updateRankRoles in messageCreate:", err);
+                }
             }
         }
     }
